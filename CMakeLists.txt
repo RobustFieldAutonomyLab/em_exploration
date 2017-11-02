@@ -30,10 +30,7 @@ set(SOURCE
 pybind11_add_module(ss2d src/SS2D.cpp ${SOURCE})
 target_link_libraries(ss2d PRIVATE gtsam flann)
 
-pybind11_add_module(ss2dpainter src/SS2DPainter.cpp ${SOURCE})
-target_link_libraries(ss2dpainter PRIVATE gtsam flann)
-
 pybind11_add_module(planner2d src/Planner2D.cpp ${SOURCE})
 target_link_libraries(planner2d PRIVATE gtsam flann)
 
-install(TARGETS ss2d ss2dpainter planner2d LIBRARY DESTINATION lib)
+install(TARGETS ss2d planner2d LIBRARY DESTINATION lib)
