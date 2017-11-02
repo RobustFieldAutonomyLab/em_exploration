@@ -8,7 +8,6 @@ from scipy.interpolate import interp1d
 from scipy.stats import trimboth
 
 import ss2d
-import ss2dpainter
 
 #######################################
 import matplotlib

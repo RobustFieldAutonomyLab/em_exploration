@@ -5,7 +5,6 @@ import numpy as np
 from scipy.stats.distributions import chi2
 
 import ss2d
-import ss2dpainter
 from utils import *
 
 
@@ -200,18 +199,6 @@ class SS2D(object):
         plt.savefig(figname, dpi=200, bbox='tight')
         plt.close()
 
-    def paint_map(self, res=0.1, prob=0.95):
-        return ss2dpainter.paint_map(self._slam.map, res, chi2.ppf(prob, 2))
-
-    def paint_virtual_map(self, res=0.1, prob=0.95):
-        return ss2dpainter.paint_virtual_map(self._virtual_map, res, chi2.ppf(prob, 2))
-
-    def paint_trajectory(self, res=0.1, prob=0.95):
-        return ss2dpainter.paint_trajectory(self._slam.map, res, chi2.ppf(prob, 2))
-
-    def paint_vehicle(self, res=0.1):
-        return ss2dpainter.paint_vehicle(self._slam.map, res, self._sim.sensor_model)
-
 
 if __name__ == '__main__':
     import sys
@@ -227,32 +214,3 @@ if __name__ == '__main__':
 
         ss.simulate_simple(odom)
         ss.savefig()
-
-        # painted_map = ss.paint_map()
-        # painted_virtual_map = ss.paint_virtual_map(prob=0.68)
-        # painted_trajectory = ss.paint_trajectory()
-        # painted_vehicle = ss.paint_vehicle()
-
-        # fig, ax = plt.subplots()
-        # plt.imshow(painted_map, origin='lower left')
-        # ax.set_aspect('equal', adjustable='box')
-        # plt.savefig('painted_map{}.png'.format(step), dpi=200, bbox='tight')
-        # plt.close()
-        #
-        # fig, ax = plt.subplots()
-        # plt.imshow(painted_virtual_map, origin='lower left')
-        # ax.set_aspect('equal', adjustable='box')
-        # plt.savefig('painted_virtual_map{}.png'.format(step), dpi=200, bbox='tight')
-        # plt.close()
-        #
-        # fig, ax = plt.subplots()
-        # plt.imshow(painted_trajectory, origin='lower left')
-        # ax.set_aspect('equal', adjustable='box')
-        # plt.savefig('painted_trajectory{}.png'.format(step), dpi=200, bbox='tight')
-        # plt.close()
-        #
-        # fig, ax = plt.subplots()
-        # plt.imshow(painted_vehicle, origin='lower left')
-        # ax.set_aspect('equal', adjustable='box')
-        # plt.savefig('painted_vehicle{}.png'.format(step), dpi=200, bbox='tight')
-        # plt.close()
