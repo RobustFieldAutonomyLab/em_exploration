@@ -6,8 +6,8 @@
 using namespace em_exploration;
 namespace py = pybind11;
 
-PYBIND11_PLUGIN(planner2d) {
-  py::module m("planner2d", "2D planner module");
+PYBIND11_MODULE(planner2d, m) {
+  m.doc() = "planner2d", "2D planner module";
 
   py::class_<EMPlanner2D::DubinsParameter>(m, "DubinsParameter")
       .def(py::init<>())
@@ -95,6 +95,4 @@ PYBIND11_PLUGIN(planner2d) {
       .value("OG_SHANNON", EMPlanner2D::OptimizationAlgorithm::OG_SHANNON)
       .value("SLAM_OG_SHANNON", EMPlanner2D::OptimizationAlgorithm::SLAM_OG_SHANNON)
       .export_values();
-
-  return m.ptr();
 }

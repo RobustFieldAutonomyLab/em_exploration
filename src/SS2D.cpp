@@ -15,8 +15,8 @@ namespace py = pybind11;
 
 PYBIND11_MAKE_OPAQUE(Point2);
 
-PYBIND11_PLUGIN(ss2d) {
-  py::module m("ss2d", "2D simulation and SLAM module");
+PYBIND11_MODULE(ss2d, m) {
+  m.doc() = "2D simulation and SLAM module";
 
   py::class_<Pose2>(m, "Pose2")
       .def(py::init<double, double, double>())
@@ -242,7 +242,5 @@ PYBIND11_PLUGIN(ss2d) {
       .def("update", (void (OccupancyMap::*)(int, int, bool))&OccupancyMap::update)
       .def("update", (void (OccupancyMap::*)(const Map &, const BearingRangeSensorModel &))&OccupancyMap::update)
       .def("update", (void (OccupancyMap::*)(const VehicleBeliefState &, const BearingRangeSensorModel &))&OccupancyMap::update);
-
-  return m.ptr();
 }
 
