@@ -45,7 +45,11 @@ VirtualMap &VirtualMap::operator=(const VirtualMap &other) {
 }
 
 void VirtualMap::updateProbability(const SLAM2D &slam, const BearingRangeSensorModel &sensor_model) {
-    std::vector<std::shared_ptr<Map>> maps = sampleMap(slam);
+//  std::vector<std::shared_ptr<Map>> maps0 = sampleMap(slam);
+
+  std::vector<std::shared_ptr<Map>> maps;
+  for (int n = 0; n < parameter_.getNumSamples(); ++n)
+    maps.push_back(slam.sample());
 
     for (int i = 0; i < virtual_landmarks_.size(); ++i) {
       virtual_landmarks_[i].probability = 0.0;
@@ -149,7 +153,7 @@ std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
           sample->addVehicle(state);
           row += 3;
         } else {
-        sample->addVehicle(*it);
+          sample->addVehicle(*it);
         }
       } else {
         VehicleBeliefState state(it->pose.retract(v.segment(row, 3)), it->information);
@@ -171,7 +175,7 @@ std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
 }
 
 bool VirtualMap::predictVirtualLandmark(const VehicleBeliefState &state, VirtualLandmark &virtual_landmark,
-                            const BearingRangeSensorModel &sensor_model) const {
+                                        const BearingRangeSensorModel &sensor_model) const {
   BearingRangeSensorModel::Measurement m = sensor_model.measure(state.pose, virtual_landmark.point, true, false);
 
   if (!sensor_model.check(m))

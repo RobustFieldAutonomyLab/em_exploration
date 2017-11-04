@@ -90,6 +90,7 @@ class VirtualMap {
     return virtual_landmarks_[i];
   }
 
+  /// @deprecated
   std::vector<std::shared_ptr<Map>> sampleMap(const SLAM2D &slam);
 
   bool predictVirtualLandmark(const VehicleBeliefState &state, VirtualLandmark &virtual_landmark,

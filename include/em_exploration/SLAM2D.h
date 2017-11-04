@@ -11,6 +11,7 @@
 #include <gtsam/nonlinear/Marginals.h>
 
 #include "em_exploration/Simulation2D.h"
+#include "em_exploration/RNG.h"
 
 namespace em_exploration {
 
@@ -22,7 +23,7 @@ class SLAM2D {
   typedef gtsam::BetweenFactor<Pose2> OdometryFactor2D;
   typedef boost::shared_ptr<gtsam::BetweenFactor<gtsam::Pose2>> OdometryFactor2DPtr;
 
-  SLAM2D(const Map::Parameter &parameter);
+  SLAM2D(const Map::Parameter &parameter, RNG::SeedType seed = 0);
 
   ~SLAM2D() {}
 
@@ -62,6 +63,9 @@ class SLAM2D {
   /// The covariance of the lastest pose is updated if update_covariacne is true.
   void optimize(bool update_covariance = true);
 
+  /// Sample map (trajectory and landmarks) from posteriors
+  std::shared_ptr<Map> sample() const;
+
   const Map &getMap() const { return map_; }
 
   static gtsam::Symbol getVehicleSymbol(unsigned int key) {
@@ -73,6 +77,8 @@ class SLAM2D {
   }
 
  private:
+  void optimizeInPlacePerturbation(const gtsam::ISAM2Clique::shared_ptr &clique,
+                                   gtsam::VectorValues &result) const;
 
   Map map_;
   unsigned int step_;
@@ -86,6 +92,8 @@ class SLAM2D {
   gtsam::Values initial_estimate_;
   gtsam::Values result_;
   bool optimized_;
+
+  mutable RNG rng_;
 };
 }
 #endif //EM_EXPLORATION_SLAM2D_H

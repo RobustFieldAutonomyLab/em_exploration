@@ -4,8 +4,8 @@ using namespace gtsam;
 
 namespace em_exploration {
 
-SLAM2D::SLAM2D(const Map::Parameter &parameter)
-    : map_(parameter), step_(0), marginals_update_(false), optimized_(false) {
+SLAM2D::SLAM2D(const Map::Parameter &parameter, RNG::SeedType seed)
+    : map_(parameter), step_(0), marginals_update_(false), optimized_(false), rng_(seed) {
   ISAM2Params params;
 //    params.setFactorization("QR");
   isam_ = std::make_shared<ISAM2>(params);
@@ -266,6 +266,51 @@ void SLAM2D::optimize(bool update_covariance) {
   initial_estimate_.clear();
   optimized_ = true;
   marginals_update_ = false;
+}
+
+std::shared_ptr<Map> SLAM2D::sample() const {
+  FastVector<ISAM2Clique::shared_ptr> roots = isam_->roots();
+
+  VectorValues result(isam_->getDelta());
+  for (const ISAM2Clique::shared_ptr &root : roots) {
+    optimizeInPlacePerturbation(root, result);
+  }
+  Values values = isam_->getLinearizationPoint().retract(result);
+
+  std::shared_ptr<Map> sampled_map(new Map(map_.getParameter()));
+  for (int i = 0; i < step_; ++i)
+    sampled_map->addVehicle(values.at<Pose2>(getVehicleSymbol(i)));
+
+  for (auto it = map_.cbeginLandmark(); it != map_.cendLandmark(); ++it)
+    sampled_map->addLandmark(it->first, values.at<Point2>(getLandmarkSymbol(it->first)));
+
+  return sampled_map;
+}
+
+void SLAM2D::optimizeInPlacePerturbation(const ISAM2Clique::shared_ptr &clique, VectorValues &result) const {
+  GaussianConditional::shared_ptr conditional = clique->conditional();
+  const Vector xS = result.vector(FastVector<Key>(conditional->beginParents(), conditional->endParents()));
+
+  Vector rhs = conditional->get_d() - conditional->get_S() * xS;
+
+  for (int i = 0; i < rhs.rows(); ++i)
+    rhs(i) += rng_.normal01();
+
+  const Vector solution = conditional->get_R().triangularView<Eigen::Upper>().solve(rhs);
+
+  if (solution.hasNaN()) {
+    throw IndeterminantLinearSystemException(conditional->keys().front());
+  }
+
+  DenseIndex vectorPosition = 0;
+  for (GaussianConditional::const_iterator frontal = conditional->beginFrontals();
+       frontal != conditional->endFrontals(); ++frontal) {
+    result.at(*frontal) = solution.segment(vectorPosition, conditional->getDim(frontal));
+    vectorPosition += conditional->getDim(frontal);
+  }
+
+  for(const ISAM2Clique::shared_ptr &child: clique->children)
+    optimizeInPlacePerturbation(child, result);
 }
 
 }
