@@ -18,3 +18,5 @@ export PYTHONPATH=build_dir
 
 python ../script/isrr2017.py
 ```
+
+> Note that figures are generated using OSX Clang. Results will be different with GCC.

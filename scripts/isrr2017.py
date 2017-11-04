@@ -6,14 +6,11 @@ import tempfile
 
 
 def explore_isrr2017_structured(config_file, max_steps, verbose=False, save_history=False, save_fig=True):
-    config = SafeConfigParser()
-    config.read(config_file)
+    config = load_config(config_file)
     range_noise = math.radians(0.1)
     config.set('Sensor Model', 'range_noise', str(range_noise))
-    tempname = tempfile.mktemp()
-    config.write(open(tempname, 'w'))
 
-    explorer = EMExplorer(tempname, verbose, save_history)
+    explorer = EMExplorer(config, verbose, save_history)
 
     status = 'MAX_STEP'
     actions = []
@@ -76,14 +73,11 @@ def explore_isrr2017_structured(config_file, max_steps, verbose=False, save_hist
 
 
 def explore_isrr2017_random(config_file, max_steps, verbose=False, save_history=False, save_fig=True):
-    config = SafeConfigParser()
-    config.read(config_file)
+    config = load_config(config_file)
     range_noise = math.radians(0.1)
     config.set('Sensor Model', 'range_noise', str(range_noise))
-    tempname = tempfile.mktemp()
-    config.write(open(tempname, 'w'))
 
-    explorer = EMExplorer(tempname, verbose, save_history)
+    explorer = EMExplorer(config, verbose, save_history)
 
     status = 'MAX_STEP'
     actions = []

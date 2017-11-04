@@ -41,6 +41,11 @@ def timeit(func):
 
 #######################################
 
+def load_config(config_name):
+    config = SafeConfigParser()
+    config.read(config_name)
+    return config
+
 #######################################
 def plot_cov_ellipse(pos, cov, nstd=2, ax=None, **kwargs):
     def eigsorted(cov):
@@ -105,14 +110,15 @@ def plot_environment(env, ax=None, trajectory=True, label=False):
     ax.set_aspect('equal', adjustable='box')
 
 
-def plot_map(m, ax=None, trajectory=True, label=False):
+def plot_map(m, ax=None, trajectory=True, label=False, cov=True):
     if ax is None:
         ax = plt.gca()
 
     for key, landmark in m.iter_landmarks():
         ax.plot(landmark.point.x, landmark.point.y, '+', color='orange')
-        plot_info_ellipse([landmark.point.x, landmark.point.y], landmark.information, ec='none',
-                          color='orange', alpha=0.5)
+        if cov:
+            plot_info_ellipse([landmark.point.x, landmark.point.y], landmark.information, ec='none',
+                              color='orange', alpha=0.5)
         if label:
             ax.text(landmark.point.x, landmark.point.y, str(int(key)),
                     size='smaller', color='k')
@@ -122,7 +128,7 @@ def plot_map(m, ax=None, trajectory=True, label=False):
         for pose in m.iter_trajectory():
             x.append(pose.pose.x)
             y.append(pose.pose.y)
-            if pose.core_vehicle:
+            if cov and pose.core_vehicle:
                 plot_info_ellipse([pose.pose.x, pose.pose.y], pose.information[:2, :2], ec='none',
                                   color='g', alpha=0.5)
         ax.plot(x, y, 'g-')

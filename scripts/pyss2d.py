@@ -56,9 +56,13 @@ def read_map_params(config, ext=5.0):
 
 
 class SS2D(object):
-    def __init__(self, config_name, verbose=False):
-        self._config = SafeConfigParser()
-        self._config.read(config_name)
+    def __init__(self, config, verbose=False):
+        if isinstance(config, str):
+            self._config = load_config(config)
+        elif isinstance(config, SafeConfigParser):
+            self._config = config
+        else:
+            print('Config type not supported!')
 
         self._sensor_params = read_sensor_params(self._config)
         self._control_params = read_control_params(self._config)
@@ -185,6 +189,25 @@ class SS2D(object):
     @property
     def map(self):
         return self._slam.map
+
+    @property
+    def environment(self):
+        return self._sim.environment
+
+    def plot(self, autoscale=False):
+        plot_environment(self._sim.environment, label=False)
+        plot_pose(self._sim.vehicle, self._sensor_params)
+        plot_measurements(self._sim.vehicle, self._measurements, label=False)
+        plot_map(self._slam.map, label=True)
+        if autoscale:
+            plt.gca().autoscale()
+            xlim = plt.gca().get_xlim()
+            ylim = plt.gca().get_ylim()
+        plot_virtual_map(self._virtual_map, self._map_params)
+        if autoscale:
+            plt.gca().set_xlim(xlim)
+            plt.gca().set_ylim(ylim)
+        # plot_samples(self._virtual_map)
 
     def savefig(self, figname=None):
         plot_environment(self._sim.environment, label=False)
