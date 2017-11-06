@@ -136,7 +136,7 @@ PYBIND11_MODULE(ss2d, m) {
       .def_property("safe_distance", &Environment::Parameter::getSafeDistance, &Environment::Parameter::setSafeDistance)
       .def("pprint", &Environment::Parameter::print);
 
-  py::class_<Environment>(m, "Environment")
+  py::class_<Environment, std::shared_ptr<Environment>>(m, "Environment")
       .def(py::init<const Environment::Parameter &>())
       .def_property_readonly("parameter", &Environment::getParameter)
       .def_property_readonly("distance", &Environment::getDistance)
@@ -197,6 +197,7 @@ PYBIND11_MODULE(ss2d, m) {
       .def("optimize", &SLAM2D::optimize, py::arg("update_covariance") = true)
       .def("joint_marginal_covariance", &SLAM2D::jointMarginalCovariance)
       .def("joint_marginal_covariance_local", &SLAM2D::jointMarginalCovarianceLocal)
+      .def("sample", &SLAM2D::sample)
       .def_property_readonly("map", &SLAM2D::getMap);
 
   py::class_<VirtualMap::Parameter, Map::Parameter>(m, "VirtualMapParameter")

@@ -64,7 +64,7 @@ class SLAM2D {
   void optimize(bool update_covariance = true);
 
   /// Sample map (trajectory and landmarks) from posteriors
-  std::shared_ptr<Map> sample() const;
+  std::pair<double, std::shared_ptr<Map>> sample() const;
 
   const Map &getMap() const { return map_; }
 
@@ -77,7 +77,7 @@ class SLAM2D {
   }
 
  private:
-  void optimizeInPlacePerturbation(const gtsam::ISAM2Clique::shared_ptr &clique,
+  double optimizeInPlacePerturbation(const gtsam::ISAM2Clique::shared_ptr &clique,
                                    gtsam::VectorValues &result) const;
 
   Map map_;

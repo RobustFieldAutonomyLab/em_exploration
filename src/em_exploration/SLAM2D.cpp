@@ -268,12 +268,13 @@ void SLAM2D::optimize(bool update_covariance) {
   marginals_update_ = false;
 }
 
-std::shared_ptr<Map> SLAM2D::sample() const {
+std::pair<double, std::shared_ptr<Map>> SLAM2D::sample() const {
   FastVector<ISAM2Clique::shared_ptr> roots = isam_->roots();
 
+  double lp = 0.0;
   VectorValues result(isam_->getDelta());
   for (const ISAM2Clique::shared_ptr &root : roots) {
-    optimizeInPlacePerturbation(root, result);
+    lp += optimizeInPlacePerturbation(root, result);
   }
   Values values = isam_->getLinearizationPoint().retract(result);
 
@@ -284,17 +285,21 @@ std::shared_ptr<Map> SLAM2D::sample() const {
   for (auto it = map_.cbeginLandmark(); it != map_.cendLandmark(); ++it)
     sampled_map->addLandmark(it->first, values.at<Point2>(getLandmarkSymbol(it->first)));
 
-  return sampled_map;
+  return std::make_pair(lp, sampled_map);
 }
 
-void SLAM2D::optimizeInPlacePerturbation(const ISAM2Clique::shared_ptr &clique, VectorValues &result) const {
+double SLAM2D::optimizeInPlacePerturbation(const ISAM2Clique::shared_ptr &clique, VectorValues &result) const {
   GaussianConditional::shared_ptr conditional = clique->conditional();
   const Vector xS = result.vector(FastVector<Key>(conditional->beginParents(), conditional->endParents()));
 
   Vector rhs = conditional->get_d() - conditional->get_S() * xS;
 
-  for (int i = 0; i < rhs.rows(); ++i)
-    rhs(i) += rng_.normal01();
+  double lp = 0.0;
+  for (int i = 0; i < rhs.rows(); ++i) {
+    double n = rng_.normal01();
+    rhs(i) += n;
+    lp += -0.5 * n * n;
+  }
 
   const Vector solution = conditional->get_R().triangularView<Eigen::Upper>().solve(rhs);
 
@@ -310,7 +315,9 @@ void SLAM2D::optimizeInPlacePerturbation(const ISAM2Clique::shared_ptr &clique, 
   }
 
   for(const ISAM2Clique::shared_ptr &child: clique->children)
-    optimizeInPlacePerturbation(child, result);
+    lp += optimizeInPlacePerturbation(child, result);
+
+  return lp;
 }
 
 }

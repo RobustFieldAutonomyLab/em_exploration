@@ -49,7 +49,7 @@ void VirtualMap::updateProbability(const SLAM2D &slam, const BearingRangeSensorM
 
   std::vector<std::shared_ptr<Map>> maps;
   for (int n = 0; n < parameter_.getNumSamples(); ++n)
-    maps.push_back(slam.sample());
+    maps.push_back(slam.sample().second);
 
     for (int i = 0; i < virtual_landmarks_.size(); ++i) {
       virtual_landmarks_[i].probability = 0.0;
