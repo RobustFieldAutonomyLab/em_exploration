@@ -1,4 +1,5 @@
 #include "em_exploration/SLAM2D.h"
+#include "em_exploration/Utils.h"
 
 using namespace gtsam;
 

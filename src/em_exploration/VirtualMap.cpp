@@ -148,7 +148,7 @@ std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
     for (auto it = map.cbeginTrajectory(); it != map.cendTrajectory(); ++it) {
       if (ignore_non_core_vehicles) {
         if (it->core_vehicle) {
-          VehicleBeliefState state(it->pose.retract(v.segment(row, 3)), it->information);
+          VehicleBeliefState state(gtsam::traits<Pose2>::Retract(it->pose, v.segment(row, 3)), it->information);
           state.core_vehicle = true;
           sample->addVehicle(state);
           row += 3;
@@ -164,7 +164,7 @@ std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
     }
 
     for (auto it = map.cbeginLandmark(); it != map.cendLandmark(); ++it) {
-      LandmarkBeliefState state(it->second.point.retract(v.segment(row, 2)), it->second.information);
+      LandmarkBeliefState state(gtsam::traits<Point2>::Retract(it->second.point, v.segment(row, 2)), it->second.information);
       sample->addLandmark(it->first, state);
       row += 2;
     }
