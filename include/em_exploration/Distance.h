@@ -67,26 +67,23 @@ class KDTreeR2 {
  public:
   typedef flann::Index<flann::L2<double>> KDTreeR2Index;
   typedef std::shared_ptr<KDTreeR2Index> KDTreeR2IndexPtr;
+  typedef Eigen::Matrix<double, Eigen::Dynamic, 2, Eigen::RowMajor> KDTreeR2Data;
 
   KDTreeR2()
-      : tree_(nullptr) {}
+      : tree_(nullptr), data_(nullptr) {}
 
-  KDTreeR2(const KDTreeR2 &other) {
-    this->tree_ = nullptr;
-    if (other.tree_ != nullptr) {
-      this->tree_ = std::make_shared<KDTreeR2Index>(*other.tree_);
-    }
-  }
+  KDTreeR2(const KDTreeR2 &other)
+      : tree_(other.tree_), data_(other.data_) {}
 
   KDTreeR2 &operator=(const KDTreeR2 &other) {
-    if (other.tree_ == nullptr)
-      this->tree_ = nullptr;
-    else
-      this->tree_ = std::make_shared<KDTreeR2Index>(*other.tree_);
+    tree_ = other.tree_;
+    data_ = other.data_;
     return *this;
   }
 
   ~KDTreeR2() {}
+
+  std::shared_ptr<KDTreeR2> clone() const;
 
   /// Build the kdtree from points.
   void build(const std::vector<gtsam::Point2> &points);
@@ -102,6 +99,7 @@ class KDTreeR2 {
 
  private:
   KDTreeR2IndexPtr tree_;
+  std::shared_ptr<KDTreeR2Data> data_;
 };
 
 /**
@@ -111,25 +109,24 @@ class KDTreeSE2 {
  public:
   typedef flann::Index<L2_SE2<double>> KDTreeSE2Index;
   typedef std::shared_ptr<KDTreeSE2Index> KDTreeSE2IndexPtr;
+  typedef Eigen::Matrix<double, Eigen::Dynamic, 4, Eigen::RowMajor> KDTreeSE2Data;
 
   KDTreeSE2()
       : tree_(nullptr) {}
 
   ~KDTreeSE2() {}
 
-  KDTreeSE2(const KDTreeSE2 &other) {
-    this->tree_ = nullptr;
-    if (other.tree_ != nullptr)
-      this->tree_ = std::make_shared<KDTreeSE2Index>(*other.tree_);
-  }
+  KDTreeSE2(const KDTreeSE2 &other)
+      : angle_weight_(other.angle_weight_), tree_(other.tree_), data_(other.data_) {}
 
   KDTreeSE2 &operator=(const KDTreeSE2 &other) {
-    if (other.tree_ == nullptr)
-      this->tree_ = nullptr;
-    else
-      this->tree_ = std::make_shared<KDTreeSE2Index>(*other.tree_);
+    angle_weight_ = other.angle_weight_;
+    tree_ = other.tree_;
+    data_ = other.data_;
     return *this;
   }
+
+  std::shared_ptr<KDTreeSE2> clone() const;
 
   void build(const std::vector<gtsam::Pose2> &poses, double angle_weight);
 
@@ -141,7 +138,9 @@ class KDTreeSE2 {
   std::vector<int> queryRadiusNeighbors(const gtsam::Pose2 &pose, double radius, int max_neighbors = -1) const;
 
  private:
+  double angle_weight_;
   KDTreeSE2IndexPtr tree_;
+  std::shared_ptr<KDTreeSE2Data> data_;
 };
 
 /// Return the squared distance between two poses.
