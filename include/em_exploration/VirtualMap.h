@@ -75,8 +75,11 @@ class VirtualMap {
 
   std::vector<std::shared_ptr<Map>>::const_iterator cendSampledMap() const { return samples_.cend(); }
 
+  inline int rows() const { return rows_; }
+  inline int cols() const { return cols_; }
   /// Return an array representing the probabilities
   Eigen::MatrixXd toArray() const;
+  std::pair<Eigen::MatrixXd, Eigen::MatrixXd> toCovArray() const;
 
   int getSampledMapSize() const { return samples_.size(); }
 

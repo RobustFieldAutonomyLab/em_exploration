@@ -26,6 +26,7 @@ def read_planner_params(config):
     planner_params = planner2d.EMPlannerParameter()
     planner_params.verbose = config.getboolean('Planner', 'verbose')
     planner_params.max_edge_length = config.getfloat('Planner', 'max_edge_length')
+    planner_params.num_actions = config.getint('Planner', 'num_actions')
     planner_params.max_nodes = config.getfloat('Planner', 'max_nodes')
     planner_params.angle_weight = config.getfloat('Planner', 'angle_weight')
     planner_params.distance_weight0 = config.getfloat('Planner', 'distance_weight0')
@@ -90,15 +91,17 @@ class EMExplorer(SS2D):
                 self.save()
 
     def follow_path(self, steps=3):
+        if self._planner_params.dubins_control_model_enabled:
+            return follow_dubins_path(steps)
         path = []
         for edge in self._planner.iter_solution():
-            path.insert(0, edge.odom)
+            path.insert(0, edge.get_odoms()[0])
         for odom in path[:steps]:
             self.simulate((odom.x, odom.y, odom.theta), core=True)
 
     def savefig(self, figname=None, path=False):
         if path:
-            plot_path(self._planner, None, True)
+            plot_path(self._planner, None, self._planner_params.dubins_control_model_enabled)
         super(EMExplorer, self).savefig(figname)
 
     def save(self):
@@ -165,7 +168,7 @@ def explore(config_file, max_distance=450, verbose=False, save_history=False, sa
                 else:
                     if save_fig:
                         explorer.savefig(path=True)
-                    explorer.follow_dubins_path(5)
+                    explorer.follow_path(5)
                 if save_fig:
                     explorer.savefig(path=False)
                 if explorer.distance > max_distance:
@@ -179,5 +182,5 @@ def explore(config_file, max_distance=450, verbose=False, save_history=False, sa
 if __name__ == '__main__':
     import sys
 
-    config_file = sys.path[0] + '/pyplanner2d.ini'
-    explore(config_file, 10, True, False, True)
+    config_file = sys.path[0] + '/../envs/exploration_env.ini'
+    explore(config_file, 100, True, False, True)

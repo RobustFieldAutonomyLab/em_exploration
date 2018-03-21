@@ -162,19 +162,32 @@ bool EMPlanner2D::connectNode(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::N
   const Pose2 &origin = parent->state.pose;
   double max_edge_distance = parameter_.max_edge_length;
   double d = origin.range(node->state.pose);
-  if (d > max_edge_distance) {
-    Point2 unit = 1.0 / d * (node->state.pose.t() - origin.t());
-    Point2 point_between = origin.t() + max_edge_distance * unit;
-    node->state.pose = Pose2(node->state.pose.r(), point_between);
+  if (!parameter_.dubins_control_model_enabled) {
+    Point2 local = origin.transform_to(node->state.pose.t());
+    double angle = Rot2::relativeBearing(local).theta();
+    angle = round((angle + M_PI) / (M_2_PI / parameter_.num_actions)) * M_2_PI / parameter_.num_actions;
+    local = Point2(parameter_.max_edge_length * cos(angle), parameter_.max_edge_length * sin(angle));
+    node->state.pose = origin * Pose2(Rot2(angle), local);
     if (parameter_.verbose) {
       std::cout << "  Scale to ";
       node->print();
     }
   }
+  // if (d > max_edge_distance) {
+  //   Point2 unit = 1.0 / d * (node->state.pose.t() - origin.t());
+  //   Point2 point_between = origin.t() + max_edge_distance * unit;
+  //   node->state.pose = Pose2(node->state.pose.r(), point_between);
+  //   if (parameter_.verbose) {
+  //     std::cout << "  Scale to ";
+  //     node->print();
+  //   }
+  // }
 
   bool dubins_connected = true;
   if (parameter_.dubins_control_model_enabled)
     dubins_connected = connectNodeDubinsPath(node, parent);
+  else
+    node->poses.push_back(node->state.pose);
 
   if (parameter_.verbose) {
     std::cout << "  Done. Connected: " << dubins_connected << std::endl;
@@ -400,6 +413,7 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
     if (node->isam != nullptr)
       break;
 
+std::cout << node->odometry_factors.size() << std::endl;
     for (int i = 0; i < node->odometry_factors.size(); ++i) {
       auto factor = node->odometry_factors[i];
       graph.add(factor);
@@ -407,6 +421,7 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
       initial_estimate.insert(factor->back(), node->poses[i]);
     }
 
+std::cout << node->measurement_factors.size() << std::endl;
     for (auto factor : node->measurement_factors)
       graph.add(factor);
 

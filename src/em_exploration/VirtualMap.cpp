@@ -122,6 +122,19 @@ Eigen::MatrixXd VirtualMap::toArray() const {
   return array;
 }
 
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> VirtualMap::toCovArray() const {
+  Eigen::MatrixXd array_length(rows_, cols_);
+  Eigen::MatrixXd array_angle(rows_, cols_);
+  for (int i = 0; i < virtual_landmarks_.size(); ++i) {
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(virtual_landmarks_[i].covariance());
+    double l = sqrt(es.eigenvalues()[1] * 5.991);
+    double a = atan2(es.eigenvectors()(1, 1), es.eigenvectors()(0, 1));
+    array_length(i / cols_, i % cols_) = l;
+    array_angle(i / cols_, i % cols_) = a;
+  }
+  return std::make_pair(array_length, array_angle);
+}
+
 std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
   samples_.clear();
   const Map &map = slam.getMap();
