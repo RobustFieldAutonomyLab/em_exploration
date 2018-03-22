@@ -81,6 +81,7 @@ PYBIND11_MODULE(planner2d, m) {
       .def("iter_dubins_library", [](const EMPlanner2D &p) {
         return py::make_iterator(p.cbeginDubinsLibrary(), p.cendDubinsLibrary()); })
       .def("get_dubins_path", &EMPlanner2D::getDubinsPath)
+      .def_static("calculate_utility", &EMPlanner2D::calculateUtility)
       .def("optimize", &EMPlanner2D::optimize);
 
   py::enum_<EMPlanner2D::OptimizationResult>(planner2d, "OptimizationResult")

@@ -284,6 +284,9 @@ class EMPlanner2D {
 
   double costFunction(Node::shared_ptr node) const;
 
+  static double calculateUncertainty(const VirtualMap &virtual_map);
+  static double calculateUtility(const VirtualMap &virtual_map, double distance, const Parameter &parameter);
+
   void updateTrajectory_EM(Node::shared_ptr leaf);
 
   void updateTrajectory_OG_SHANNON(Node::shared_ptr leaf);

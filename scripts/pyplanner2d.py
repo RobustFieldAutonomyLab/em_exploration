@@ -64,6 +64,9 @@ class EMExplorer(SS2D):
             self._planner_params.pprint()
         self.save_history = save_history
 
+    def calculate_utility(self, distance):
+        return planner2d.EMPlanner2D.calculate_utility(self._virtual_map, distance, self._planner_params)
+
     def plan(self):
         return self._planner.optimize(self._slam, self._virtual_map)
 
@@ -97,7 +100,13 @@ class EMExplorer(SS2D):
         for edge in self._planner.iter_solution():
             path.insert(0, edge.get_odoms()[0])
         for odom in path[:steps]:
-            self.simulate((odom.x, odom.y, odom.theta), core=True)
+            if self.simulate((odom.x, odom.y, odom.theta), core=True):
+                return true
+
+    def plot(self, path=False):
+        if path:
+            plot_path(self._planner, None, self._planner_params.dubins_control_model_enabled)
+        super(EMExplorer, self).plot()
 
     def savefig(self, figname=None, path=False):
         if path:
@@ -183,4 +192,4 @@ if __name__ == '__main__':
     import sys
 
     config_file = sys.path[0] + '/../envs/exploration_env.ini'
-    explore(config_file, 100, True, False, True)
+    explore(config_file, 400, True, False, True)
