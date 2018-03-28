@@ -38,8 +38,25 @@ std::vector<int> radiusNeighbors(const std::vector<gtsam::Pose2> &poses,
   return n;
 }
 
+std::shared_ptr<KDTreeR2> KDTreeR2::clone() const {
+  if (tree_ == nullptr)
+    return nullptr;
+
+  std::shared_ptr<KDTreeR2Data> data(new KDTreeR2Data(*data_));
+
+  std::shared_ptr<KDTreeR2> kdtree;
+  kdtree->data_ = data;
+
+  flann::Matrix<double> dataset(kdtree->data_->data(), kdtree->data_->rows(), 2);
+  kdtree->tree_ = std::make_shared<KDTreeR2Index>(dataset, flann::KDTreeSingleIndexParams());
+  kdtree->tree_->buildIndex();
+
+  return kdtree;
+}
+
 void KDTreeR2::build(const std::vector<gtsam::Point2> &points) {
-  flann::Matrix<double> dataset(new double[points.size() * 2], points.size(), 2);
+  data_ = std::make_shared<KDTreeR2Data>(points.size(), 2);
+  flann::Matrix<double> dataset(data_->data(), points.size(), 2);
   for (int i = 0; i < points.size(); ++i) {
     *(dataset[i] + 0) = points[i].x();
     *(dataset[i] + 1) = points[i].y();
@@ -47,8 +64,6 @@ void KDTreeR2::build(const std::vector<gtsam::Point2> &points) {
 
   tree_ = std::make_shared<KDTreeR2Index>(dataset, flann::KDTreeSingleIndexParams());
   tree_->buildIndex();
-
-  delete[] dataset.ptr();
 }
 
 void KDTreeR2::addPoints(const std::vector<gtsam::Point2> &points) {
@@ -56,15 +71,14 @@ void KDTreeR2::addPoints(const std::vector<gtsam::Point2> &points) {
     build(points);
   }
 
-  flann::Matrix<double> dataset(new double[points.size() * 2], points.size(), 2);
+  data_->conservativeResize(points.size() + data_->rows(), Eigen::NoChange);
+  flann::Matrix<double> dataset(data_->data() + tree_->size() * 2, points.size(), 2);
   for (int i = 0; i < points.size(); ++i) {
     *(dataset[i] + 0) = points[i].x();
     *(dataset[i] + 1) = points[i].y();
   }
 
   tree_->addPoints(dataset, REBUILD_THRESHOLD);
-
-  delete[] dataset.ptr();
 }
 
 int KDTreeR2::queryNearestNeighbor(const gtsam::Point2 &point) const {
@@ -112,8 +126,27 @@ std::vector<int> KDTreeR2::queryRadiusNeighbors(const gtsam::Point2 &point,
   return indices[0];
 }
 
+std::shared_ptr<KDTreeSE2> KDTreeSE2::clone() const {
+  if (tree_ == nullptr)
+    return nullptr;
+
+  std::shared_ptr<KDTreeSE2Data> data(new KDTreeSE2Data(*data_));
+
+  std::shared_ptr<KDTreeSE2> kdtree;
+  kdtree->data_ = data;
+
+  flann::Matrix<double> dataset(kdtree->data_->data(), kdtree->data_->rows(), 4);
+  kdtree->tree_ = std::make_shared<KDTreeSE2Index>(dataset, flann::KDTreeSingleIndexParams(),
+                                                   L2_SE2<double>(angle_weight_));
+  kdtree->tree_->buildIndex();
+
+  return kdtree;
+}
+
 void KDTreeSE2::build(const std::vector<gtsam::Pose2> &poses, double angle_weight) {
-  flann::Matrix<double> dataset(new double[poses.size() * 4], poses.size(), 4);
+  angle_weight_ = angle_weight;
+  data_ = std::make_shared<KDTreeSE2Data>(poses.size(), 4);
+  flann::Matrix<double> dataset(data_->data(), poses.size(), 4);
   for (int i = 0; i < poses.size(); ++i) {
     *(dataset[i] + 0) = poses[i].x();
     *(dataset[i] + 1) = poses[i].y();
@@ -123,8 +156,6 @@ void KDTreeSE2::build(const std::vector<gtsam::Pose2> &poses, double angle_weigh
 
   tree_ = std::make_shared<KDTreeSE2Index>(dataset, flann::KDTreeSingleIndexParams(), L2_SE2<double>(angle_weight));
   tree_->buildIndex();
-
-  delete[] dataset.ptr();
 }
 
 void KDTreeSE2::addPoints(const std::vector<gtsam::Pose2> &poses) {
@@ -133,7 +164,8 @@ void KDTreeSE2::addPoints(const std::vector<gtsam::Pose2> &poses) {
 //      build(poses, angle_weight);
 //    }
 
-  flann::Matrix<double> dataset(new double[poses.size() * 4], poses.size(), 4);
+  data_->conservativeResize(poses.size() + data_->rows(), Eigen::NoChange);
+  flann::Matrix<double> dataset(data_->data() + tree_->size() * 4, poses.size(), 4);
   for (int i = 0; i < poses.size(); ++i) {
     *(dataset[i] + 0) = poses[i].x();
     *(dataset[i] + 1) = poses[i].y();
@@ -141,8 +173,6 @@ void KDTreeSE2::addPoints(const std::vector<gtsam::Pose2> &poses) {
     *(dataset[i] + 3) = poses[i].rotation().s();
   }
   tree_->addPoints(dataset, REBUILD_THRESHOLD);
-
-  delete[] dataset.ptr();
 }
 
 int KDTreeSE2::queryNearestNeighbor(const gtsam::Pose2 &pose) const {

@@ -53,6 +53,8 @@ Eigen::MatrixXd OccupancyMap::toArray() const {
 }
 
 void OccupancyMap::update(int row, int col, bool free) {
+  if (row >= rows_ || row < 0 || col >= cols_ || col < 0)
+    return;
   double logodds0 = map_[row * cols_ + col];
   double logodds = logodds0 + (free ? LOGODDS_FREE : LOGODDS_OCCUPIED);
   logodds = std::min(MAX_LOGODDS, std::max(MIN_LOGODDS, logodds));

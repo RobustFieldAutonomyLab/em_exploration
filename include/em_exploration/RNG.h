@@ -29,6 +29,7 @@ class QRNG {
     Eigen::VectorXd v(dim_);
     for (int i = 0; i < dim_; ++i)
       v(i) = values[i];
+    delete[] values;
     return v;
   }
 
