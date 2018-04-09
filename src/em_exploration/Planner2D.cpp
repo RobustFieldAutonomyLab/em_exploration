@@ -41,10 +41,10 @@ EMPlanner2D::EMPlanner2D(const Parameter &parameter,
 }
 
 bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node) const {
-  int vl_nearest_neighbor = virtual_map_->searchVirtualLandmarkNearest(node->state);
-  if (vl_nearest_neighbor < virtual_map_->getVirtualLandmarkSize() &&
-      virtual_map_->getVirtualLandmark(vl_nearest_neighbor).probability > parameter_.occupancy_threshold)
-    return false;
+  // int vl_nearest_neighbor = virtual_map_->searchVirtualLandmarkNearest(node->state);
+  // if (vl_nearest_neighbor < virtual_map_->getVirtualLandmarkSize() &&
+  //     virtual_map_->getVirtualLandmark(vl_nearest_neighbor).probability > parameter_.occupancy_threshold)
+  //   return false;
 
   std::vector<unsigned int> l_neighbors =
       map_->searchLandmarkNeighbors(node->state, parameter_.safe_distance, 1);
@@ -65,10 +65,10 @@ bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::Node::
     const Pose2 &pose1 = node->state.pose;
     const Pose2 &pose2 = parent->state.pose;
     double d = pose1.range(pose2);
-    Point2 unit = 1.0 / d * (pose2.t() - pose1.t());
+    Point2 unit = 1.0 / d * (pose2.transform_to(pose1.t()));
 
     for (double l = safe_distance / 2; l < d; l += safe_distance / 2) {
-      Point2 point_between = pose1.t() + l * unit;
+      Point2 point_between = pose1.transform_from(l * unit);
       Pose2 pose_between(pose1.r(), point_between);
       EMPlanner2D::Node::shared_ptr temp(new EMPlanner2D::Node(pose_between));
       if (!isSafe(temp))
@@ -162,19 +162,35 @@ bool EMPlanner2D::connectNode(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::N
   const Pose2 &origin = parent->state.pose;
   double max_edge_distance = parameter_.max_edge_length;
   double d = origin.range(node->state.pose);
-  if (d > max_edge_distance) {
-    Point2 unit = 1.0 / d * (node->state.pose.t() - origin.t());
-    Point2 point_between = origin.t() + max_edge_distance * unit;
-    node->state.pose = Pose2(node->state.pose.r(), point_between);
+  if (fabs(d - parameter_.max_edge_length) > 0.1 * parameter_.max_edge_length)
+    return false;
+
+  if (!parameter_.dubins_control_model_enabled) {
+    Point2 local = origin.transform_to(node->state.pose.t());
+    double angle = Rot2::relativeBearing(local).theta();
+    angle = round(angle / (2 * M_PI / parameter_.num_actions)) * 2 * M_PI / parameter_.num_actions;
+    local = Point2(parameter_.max_edge_length * cos(angle), parameter_.max_edge_length * sin(angle));
+    node->state.pose = origin * Pose2(Rot2(angle), local);
     if (parameter_.verbose) {
       std::cout << "  Scale to ";
       node->print();
     }
   }
+  // if (d > max_edge_distance) {
+  //   Point2 unit = 1.0 / d * (node->state.pose.t() - origin.t());
+  //   Point2 point_between = origin.t() + max_edge_distance * unit;
+  //   node->state.pose = Pose2(node->state.pose.r(), point_between);
+  //   if (parameter_.verbose) {
+  //     std::cout << "  Scale to ";
+  //     node->print();
+  //   }
+  // }
 
   bool dubins_connected = true;
   if (parameter_.dubins_control_model_enabled)
     dubins_connected = connectNodeDubinsPath(node, parent);
+  else
+    node->poses.push_back(node->state.pose);
 
   if (parameter_.verbose) {
     std::cout << "  Done. Connected: " << dubins_connected << std::endl;
@@ -282,6 +298,31 @@ double EMPlanner2D::calculateUncertainty_EM(Node::shared_ptr node) const {
     std::cout << "  Done. Uncertainty: " << uncertainty << std::endl;
 
   return uncertainty;
+}
+
+double EMPlanner2D::calculateUncertainty(const VirtualMap &virtual_map) {
+  double uncertainty = 0.0;
+  for (auto it = virtual_map.cbeginVirtualLandmark();
+       it != virtual_map.cendVirtualLandnmark(); ++it) {
+    // if (it->probability > 0.49) {
+      uncertainty += 1.0 * it->covariance().trace();
+    // }
+  }
+  return uncertainty;
+}
+
+double EMPlanner2D::calculateUtility(const VirtualMap &virtual_map, double distance, const Parameter &parameter) {
+  int vl_known = 0;
+  for (auto it = virtual_map.cbeginVirtualLandmark(); it != virtual_map.cendVirtualLandnmark(); ++it)
+    if (it->probability < parameter.occupancy_threshold)
+      vl_known++;
+
+  double percentage_known = (double) vl_known / virtual_map.getVirtualLandmarkSize();
+
+  double distance_weight = parameter.distance_weight0
+        - (parameter.distance_weight0 - parameter.distance_weight1) * percentage_known;
+
+  return EMPlanner2D::calculateUncertainty(virtual_map) + distance * distance_weight;
 }
 
 double EMPlanner2D::calculateUncertainty_OG_SHANNON(Node::shared_ptr node) const {
@@ -746,8 +787,8 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
 
     if (!connectNode(node, parent)) {
       failed += 1;
-      if (failed > 100)
-        return OptimizationResult::SAMPLING_FAILURE;
+      // if (failed > 100)
+      //   return OptimizationResult::SAMPLING_FAILURE;
       continue;
     }
     failed = 0;
@@ -772,12 +813,14 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
   }
 
 #ifdef LEAFONLY
+  best_node_->cost = 1e10;
   for (Node::shared_ptr node : nodes_) {
     if (node->children.size() != 0)
       continue;
 
     node->uncertainty = calculateUncertainty(node);
     node->cost = costFunction(node);
+    // std::cout << "uncertainty: " << node->uncertainty << ", distance: " << node->distance << std::endl;
 
     if (parameter_.algorithm == OptimizationAlgorithm::SLAM_OG_SHANNON && best_node_ == root_) {
       best_node_ = node;

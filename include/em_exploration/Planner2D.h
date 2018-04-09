@@ -60,6 +60,7 @@ class EMPlanner2D {
     double d_weight;   /// decrease of weight if no solution is found (to perform another optimization)
     double max_nodes;   /// maximum nodes in RRT
     double max_edge_length;   /// maximum extension distance
+    int num_actions;
     double occupancy_threshold;   /// occupancy probability to be considered as free
     double safe_distance;   /// safe distance
     double alpha; // for SLAM_OG_SHANNON
@@ -282,6 +283,9 @@ class EMPlanner2D {
   double calculateUncertainty_SLAM_OG_SHANNON(Node::shared_ptr node) const;
 
   double costFunction(Node::shared_ptr node) const;
+
+  static double calculateUncertainty(const VirtualMap &virtual_map);
+  static double calculateUtility(const VirtualMap &virtual_map, double distance, const Parameter &parameter);
 
   void updateTrajectory_EM(Node::shared_ptr leaf);
 

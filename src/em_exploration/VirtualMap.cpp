@@ -122,6 +122,19 @@ Eigen::MatrixXd VirtualMap::toArray() const {
   return array;
 }
 
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> VirtualMap::toCovArray() const {
+  Eigen::MatrixXd array_length(rows_, cols_);
+  Eigen::MatrixXd array_angle(rows_, cols_);
+  for (int i = 0; i < virtual_landmarks_.size(); ++i) {
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(virtual_landmarks_[i].covariance());
+    double l = sqrt(es.eigenvalues()[1]);
+    double a = atan2(es.eigenvectors()(1, 1), es.eigenvectors()(0, 1));
+    array_length(i / cols_, i % cols_) = std::min(l, parameter_.getSigma0());
+    array_angle(i / cols_, i % cols_) = a;
+  }
+  return std::make_pair(array_length, array_angle);
+}
+
 std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
   samples_.clear();
   const Map &map = slam.getMap();
@@ -218,8 +231,11 @@ void VirtualMap::updateInformation(VirtualLandmark &virtual_landmark, const Map 
 }
 
 void VirtualMap::updateInformation(const Map &map, const BearingRangeSensorModel &sensor_model) {
-  for (auto &it : virtual_landmarks_)
+  for (auto &it : virtual_landmarks_) {
     it.updated = false;
+    it.information = (Eigen::Matrix2d() << 1.0 / pow(parameter_.getSigma0(), 2), 0,
+                      0, 1.0 / pow(parameter_.getSigma0(), 2)).finished();
+  }
 
 //    for (VirtualLandmark &l : virtual_landmarks_) {
 //      updateInformation(l, map, sensor_model);
@@ -250,6 +266,9 @@ int VirtualMap::searchVirtualLandmarkNearest(const VehicleBeliefState &state) co
 
 void VirtualMap::updateInformation(const VehicleBeliefState &state, const BearingRangeSensorModel &sensor_model) {
   assert(virtual_landmarks_kdtree_);
+
+  if (state.information.determinant() < 1e-10)
+    return;
 
   std::vector<int> neighbors = searchVirtualLandmarkNeighbors(state, sensor_model.getParameter().getMaxRange(), -1);
 
@@ -309,4 +328,3 @@ Eigen::Matrix2d VirtualMap::covarianceIntersection2D(const Eigen::Matrix2d &m1, 
   return w * m1 + (1.0 - w) * m2;
 }
 }
-
