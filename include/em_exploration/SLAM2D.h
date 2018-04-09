@@ -13,7 +13,79 @@
 #include "em_exploration/Simulation2D.h"
 #include "em_exploration/RNG.h"
 
+#define USE_FAST_MARGINAL
+
+#include <Eigen/SparseCore>
+#include <boost/unordered_map.hpp>
+#include <unordered_map>
+
 namespace em_exploration {
+
+/*
+ * Implementation of the covariance recovery algorithm in
+ *     Covariance Recovery from a Square Root Information Matrix for Data Association
+ * See code in iSAM for details
+ *     http://people.csail.mit.edu/kaess/isam/
+ */
+typedef Eigen::SparseVector<double> SparseVector;
+
+struct SparseBlockVector {
+  std::map<gtsam::Key, gtsam::Matrix> vector;
+
+  void insert(gtsam::Key i, const gtsam::Matrix &block) {
+    vector[i] = block;
+  }
+
+  std::map<gtsam::Key, gtsam::Matrix>::const_iterator begin() const { return vector.begin(); };
+  std::map<gtsam::Key, gtsam::Matrix>::const_iterator end() const { return vector.end(); };
+
+  SparseBlockVector() {}
+};
+
+std::ostream& operator<<(std::ostream &os, const SparseBlockVector &vector);
+
+typedef std::pair<gtsam::Key, gtsam::Key> KeyPair;
+std::size_t hash_value(const KeyPair &key_pair);
+
+struct CovarianceCache {
+  boost::unordered_map<KeyPair, gtsam::Matrix> entries;
+  std::unordered_map<gtsam::Key, gtsam::Matrix> diag;
+  std::unordered_map<gtsam::Key, SparseBlockVector> rows;
+
+  CovarianceCache() {}
+};
+
+class FastMarginals {
+ public:
+  FastMarginals(const std::shared_ptr<gtsam::ISAM2> &isam2) : isam2_(isam2) {
+    initialize();
+  }
+
+  gtsam::Matrix jointMarginalCovariance(const std::vector<gtsam::Key> &variables);
+
+ private:
+
+  void initialize();
+
+  gtsam::Matrix getRBlock(const gtsam::Key &key_i, const gtsam::Key &key_j);
+
+  const SparseBlockVector& getRRow(const gtsam::Key &key);
+
+  gtsam::Matrix getR(const std::vector<gtsam::Key> &variables);
+
+  gtsam::Matrix getKeyDiag(const gtsam::Key &key);
+
+  size_t getKeyDim(const gtsam::Key &key);
+
+  gtsam::Matrix sumJ(const gtsam::Key key_l, const gtsam::Key key_i);
+
+  gtsam::Matrix recover(const gtsam::Key &key_i, const gtsam::Key &key_l);
+
+  std::shared_ptr<gtsam::ISAM2> isam2_;
+  std::vector<gtsam::Key> ordering_;
+  boost::unordered_map<gtsam::Key, size_t> key_idx_;
+  CovarianceCache cov_cache_;
+};
 
 class SLAM2D {
 
@@ -86,7 +158,11 @@ class SLAM2D {
   std::shared_ptr<gtsam::ISAM2> isam_;
 
   mutable bool marginals_update_;
+#ifdef USE_FAST_MARGINAL
+  mutable std::shared_ptr<FastMarginals> marginals_;
+#else
   mutable std::shared_ptr<gtsam::Marginals> marginals_;
+#endif
 
   gtsam::NonlinearFactorGraph graph_;
   gtsam::Values initial_estimate_;
