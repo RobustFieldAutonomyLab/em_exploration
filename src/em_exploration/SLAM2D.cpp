@@ -19,6 +19,10 @@ std::size_t hash_value(const KeyPair &key_pair) {
   return seed;
 }
 
+Matrix FastMarginals::marginalCovariance(const Key &variable) {
+  return recover(variable, variable);
+}
+
 Matrix FastMarginals::jointMarginalCovariance(const std::vector<Key> &variables) {
   size_t dim = 0;
   std::vector<size_t> variable_acc_dim;
@@ -181,6 +185,121 @@ Matrix FastMarginals::recover(const Key &key_i, const Key &key_l) {
   } else {
     return entry_iter->second;
   }
+}
+
+void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
+                            const NonlinearFactorGraph &meas_graph,
+                            const Values &new_values) {
+  Values values = isam2_->calculateEstimate();
+  values.insert(new_values);
+  auto key_dim = [&values](Key key) {return values.at(key).dim(); };
+
+  GaussianFactorGraph::shared_ptr linear_odom_graph = odom_graph.linearize(values);
+  GaussianFactorGraph::shared_ptr linear_meas_graph = meas_graph.linearize(values);
+
+  for (const GaussianFactor::shared_ptr &gf : *linear_odom_graph) {
+    JacobianFactor::shared_ptr jf = boost::dynamic_pointer_cast<JacobianFactor>(gf);
+    Key key0 = jf->front();
+    Key key1 = jf->back();
+
+    Matrix cov0 = marginalCovariance(key0);
+    Matrix H0 = jf->getA(jf->find(key0));
+    Matrix H1 = jf->getA(jf->find(key1)).inverse();
+    Matrix cov1 = H1 * (H0 * cov0 * H0.transpose() + Matrix::Identity(H0.rows(), H0.cols())) * H1.transpose();
+
+    new_keys_.insert(key1);
+    linear_odom_factors_.insert(std::make_pair(key1, jf));
+    ordering_.push_back(key1);
+    key_idx_[key1] = key_idx_[key0] + 1;
+    cov_cache_.entries.insert(std::make_pair(std::make_pair(key1, key1), cov1));
+  }
+
+  if (meas_graph.empty())
+    return;
+
+  size_t dim = 0;
+  KeySet meas_key_set;
+  for (const GaussianFactor::shared_ptr &gf : *linear_meas_graph) {
+    JacobianFactor::shared_ptr jf = boost::dynamic_pointer_cast<JacobianFactor>(gf);
+    meas_key_set.insert(jf->front());
+    meas_key_set.insert(jf->back());
+    dim += jf->rows();
+  }
+
+  KeyVector meas_keys(meas_key_set.begin(), meas_key_set.end());
+  std::sort(meas_keys.begin(), meas_keys.end(), [this](const Key &key0, const Key &key1) {
+    return key_idx_[key0] < key_idx_[key1]; });
+  std::unordered_map<Key, size_t> meas_key_col;
+  size_t r = 0, cols = 0;
+  for (Key key : meas_keys) {
+    meas_key_col[key] = r;
+    r += key_dim(key);
+    cols += key_dim(key);
+  }
+
+  Matrix A = Matrix::Zero(dim, cols);
+  r = 0;
+  for (const GaussianFactor::shared_ptr &gf : *linear_meas_graph) {
+    JacobianFactor::shared_ptr jf = boost::dynamic_pointer_cast<JacobianFactor>(gf);
+    Key key0 = jf->front();
+    Key key1 = jf->back();
+
+    size_t d = jf->rows();
+    A.block(r, meas_key_col[key0], d, key_dim(key0)) = jf->getA(jf->find(key0));
+    A.block(r, meas_key_col[key1], d, key_dim(key1)) = jf->getA(jf->find(key1));
+    r += d;
+  }
+
+  Matrix Sigma_A(cols, cols);
+  r = 0;
+  for (Key key0 : meas_keys) {
+    int c = 0;
+    for (Key key1 : meas_keys) {
+      Sigma_A.block(r, c, key_dim(key0), key_dim(key1)) = propagate(key0, key1);
+      c += key_dim(key1);
+    }
+    r += key_dim(key0);
+  }
+
+  Matrix S = (Matrix::Identity(dim, dim) + A * Sigma_A * A.transpose()).inverse();
+
+  for (auto it = ordering_.rbegin(); it != ordering_.rend(); ++it) {
+    size_t d = key_dim(*it);
+    Matrix Sigma = Matrix::Zero(d, cols);
+    for (Key key : meas_keys) {
+      Sigma.block(0, meas_key_col[key], d, key_dim(key)) = propagate(*it, key);
+    }
+
+    Matrix Delta = -Sigma * A.transpose() * S * A * Sigma.transpose();
+    cov_cache_.entries[std::make_pair(*it, *it)] += Delta;
+  }
+}
+
+Matrix FastMarginals2::propagate(Key key0, Key key1) {
+  if (key0 == key1)
+    return cov_cache_.entries[std::make_pair(key0, key1)];
+
+  if (key_idx_[key0] > key_idx_[key1])
+    return propagate(key1, key0).transpose();
+
+  auto key_pair = std::make_pair(key0, key1);
+  auto it = cov_cache_.entries.find(key_pair);
+  if (it == cov_cache_.entries.end()) {
+    if (new_keys_.find(key1) != new_keys_.end()) {
+      Key key01 = Symbol(symbolChr(key1), symbolIndex(key1) - 1);
+
+      auto factor = linear_odom_factors_[key1];
+      Matrix H1 = factor->getA(factor->find(factor->front()));
+      Matrix H2 = factor->getA(factor->find(factor->back()));
+      Matrix F = -H2.inverse() * H1;
+
+      cov_cache_.entries[key_pair] = propagate(key0, key01) * F.transpose();
+      return cov_cache_.entries[key_pair];
+    } else {
+      return recover(key0, key1);
+    }
+  } else
+    return it->second;
 }
 
 SLAM2D::SLAM2D(const Map::Parameter &parameter, RNG::SeedType seed)
@@ -420,12 +539,16 @@ void SLAM2D::optimize(bool update_covariance) {
   isam_->update(graph_, initial_estimate_);
   result_ = isam_->calculateEstimate();
 
+#ifdef USE_FAST_MARGINAL
+  marginals_ = std::make_shared<FastMarginals>(isam_);
+#endif
+
   for (int i = 0; i < step_; ++i) {
     Symbol x = getVehicleSymbol(i);
     Pose2 pose = result_.at<Pose2>(x);
     if (update_covariance) {
 #ifdef USE_FAST_MARGINAL
-      Eigen::Matrix3d covariance = jointMarginalCovarianceLocal({i}, {});
+      Eigen::Matrix3d covariance = marginals_->marginalCovariance(x);
 #else
       Eigen::Matrix3d covariance = isam_->marginalCovariance(x);
 #endif
@@ -452,7 +575,7 @@ void SLAM2D::optimize(bool update_covariance) {
     it->second.point = result_.at<Point2>(l);
     if (update_covariance)
 #ifdef USE_FAST_MARGINAL
-      it->second.information = jointMarginalCovarianceLocal({}, {symbolIndex(l)}).inverse();
+      it->second.information = marginals_->marginalCovariance(l).inverse();
 #else
       it->second.information = isam_->marginalCovariance(l).inverse();
 #endif

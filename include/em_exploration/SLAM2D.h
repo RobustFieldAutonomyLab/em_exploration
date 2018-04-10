@@ -61,9 +61,11 @@ class FastMarginals {
     initialize();
   }
 
+  gtsam::Matrix marginalCovariance(const gtsam::Key &variable);
+
   gtsam::Matrix jointMarginalCovariance(const std::vector<gtsam::Key> &variables);
 
- private:
+ protected:
 
   void initialize();
 
@@ -85,6 +87,24 @@ class FastMarginals {
   std::vector<gtsam::Key> ordering_;
   boost::unordered_map<gtsam::Key, size_t> key_idx_;
   CovarianceCache cov_cache_;
+};
+
+class FastMarginals2 : public FastMarginals {
+ public:
+  FastMarginals2(const std::shared_ptr<gtsam::ISAM2> &isam2) : FastMarginals(isam2) {}
+
+  FastMarginals2(const FastMarginals &fast_marginals)
+      : FastMarginals(fast_marginals) {}
+
+  void update(const gtsam::NonlinearFactorGraph &odom_graph,
+              const gtsam::NonlinearFactorGraph &meas_graph,
+              const gtsam::Values &values);
+ private:
+  gtsam::Matrix propagate(gtsam::Key key0, gtsam::Key key1);
+
+  gtsam::KeySet new_keys_;
+  std::unordered_map<gtsam::Key, gtsam::JacobianFactor::shared_ptr> linear_odom_factors_;
+
 };
 
 class SLAM2D {
@@ -147,6 +167,12 @@ class SLAM2D {
   static gtsam::Symbol getLandmarkSymbol(unsigned int key) {
     return gtsam::Symbol('l', key);
   }
+
+#ifdef USE_FAST_MARGINAL
+  std::shared_ptr<FastMarginals> getMarginals() {
+    return marginals_;
+  }
+#endif
 
  private:
   double optimizeInPlacePerturbation(const gtsam::ISAM2Clique::shared_ptr &clique,
