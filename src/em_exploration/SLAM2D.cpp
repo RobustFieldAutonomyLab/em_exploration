@@ -189,7 +189,8 @@ Matrix FastMarginals::recover(const Key &key_i, const Key &key_l) {
 
 void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
                             const NonlinearFactorGraph &meas_graph,
-                            const Values &new_values) {
+                            const Values &new_values,
+                            const KeySet &updated_keys) {
   Values values = isam2_->calculateEstimate();
   values.insert(new_values);
   auto key_dim = [&values](Key key) {return values.at(key).dim(); };
@@ -264,6 +265,9 @@ void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
   Matrix S = (Matrix::Identity(dim, dim) + A * Sigma_A * A.transpose()).inverse();
 
   for (auto it = ordering_.rbegin(); it != ordering_.rend(); ++it) {
+    if (updated_keys.find(*it) == updated_keys.end())
+      continue;
+
     size_t d = key_dim(*it);
     Matrix Sigma = Matrix::Zero(d, cols);
     for (Key key : meas_keys) {

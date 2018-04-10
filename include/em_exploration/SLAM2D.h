@@ -98,7 +98,8 @@ class FastMarginals2 : public FastMarginals {
 
   void update(const gtsam::NonlinearFactorGraph &odom_graph,
               const gtsam::NonlinearFactorGraph &meas_graph,
-              const gtsam::Values &values);
+              const gtsam::Values &values,
+              const gtsam::KeySet &updated_keys);
  private:
   gtsam::Matrix propagate(gtsam::Key key0, gtsam::Key key1);
 
@@ -169,7 +170,7 @@ class SLAM2D {
   }
 
 #ifdef USE_FAST_MARGINAL
-  std::shared_ptr<FastMarginals> getMarginals() {
+  std::shared_ptr<FastMarginals> getMarginals() const {
     return marginals_;
   }
 #endif

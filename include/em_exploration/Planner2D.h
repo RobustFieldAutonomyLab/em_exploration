@@ -301,6 +301,8 @@ class EMPlanner2D {
 
   OptimizationResult optimize(const SLAM2D &slam, const VirtualMap &virtual_map);
 
+  OptimizationResult optimize2(const SLAM2D &slam, const VirtualMap &virtual_map);
+
  private:
 
   /// Initialize dubins path library which is used to search for path
@@ -320,6 +322,8 @@ class EMPlanner2D {
   const Map *map_;
   gtsam::Values::shared_ptr values_;
   const VirtualMap *virtual_map_;
+  const SLAM2D *slam_;
+  gtsam::KeySet updated_keys_;
 
   Node::shared_ptr root_;
 
