@@ -40,6 +40,11 @@ class ExplorationEnv(gym.Env):
 
         rows, cols = self._sim._virtual_map.to_array().shape
         self._max_sigma = self._sim._virtual_map.get_parameter().sigma0
+        min_x, max_x = self._sim._map_params.min_x, self._sim._map_params.max_x
+        min_y, max_y = self._sim._map_params.min_y, self._sim._map_params.max_y
+        self._position_x = spaces.Box(low=min_x, high=max_x)
+        self._position_y = spaces.Box(low=min_y, high=max_y)
+        self._position_theta = spaces.Box(low=-math.pi, high=math.pi)
         self._vm_cov_sigma = spaces.Box(low=0, high=self._max_sigma, shape=(rows, cols))
         self._vm_cov_angle = spaces.Box(low=-math.pi, high=math.pi, shape=(rows, cols))
         self._vm_prob = spaces.Box(low=0.0, high=1.0, shape=(rows, cols))
@@ -53,7 +58,8 @@ class ExplorationEnv(gym.Env):
 
     def _get_obs(self):
         cov_array = self._sim._virtual_map.to_cov_array()
-        self._obs = self._sim._virtual_map.to_array(), cov_array[0], cov_array[1]
+        self._obs = self._sim.vehicle_position.x, self._sim.vehicle_position.y, self._sim.vehicle_position.theta,\
+                    self._sim._virtual_map.to_array(), cov_array[0], cov_array[1]
         return self._obs
 
     def _get_utility(self, action=None):
@@ -140,6 +146,7 @@ class ExplorationEnv(gym.Env):
             plt.pause(ExplorationEnv.metadata['render.pause'])
         else:
             super(ExplorationEnv, self).render(mode=mode)
+
 
 if __name__ == '__main__':
     import sys
