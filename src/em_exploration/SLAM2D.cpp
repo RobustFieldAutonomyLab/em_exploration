@@ -190,14 +190,18 @@ Matrix FastMarginals::recover(const Key &key_i, const Key &key_l) {
 void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
                             const NonlinearFactorGraph &meas_graph,
                             const Values &new_values,
-                            const KeySet &updated_keys) {
-  Values values = isam2_->calculateEstimate();
+                            const KeySet &updated_keys_) {
+  gttic_(a);
+  Values values = isam2_->getLinearizationPoint();
   values.insert(new_values);
   auto key_dim = [&values](Key key) {return values.at(key).dim(); };
 
   GaussianFactorGraph::shared_ptr linear_odom_graph = odom_graph.linearize(values);
   GaussianFactorGraph::shared_ptr linear_meas_graph = meas_graph.linearize(values);
 
+  last_key_ = (*odom_graph.begin())->front();
+  size0_ = ordering_.size();
+  Matrix F = Matrix::Identity(3, 3);
   for (const GaussianFactor::shared_ptr &gf : *linear_odom_graph) {
     JacobianFactor::shared_ptr jf = boost::dynamic_pointer_cast<JacobianFactor>(gf);
     Key key0 = jf->front();
@@ -208,16 +212,24 @@ void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
     Matrix H1 = jf->getA(jf->find(key1)).inverse();
     Matrix cov1 = H1 * (H0 * cov0 * H0.transpose() + Matrix::Identity(H0.rows(), H0.cols())) * H1.transpose();
 
+    if (!meas_graph.empty()) {
+      F = -H1 * H0 * F;
+      Fs_.insert(std::make_pair(key1, F));
+      F_.insert(std::make_pair(key1, -H1 * H0));
+    }
+
     new_keys_.insert(key1);
     linear_odom_factors_.insert(std::make_pair(key1, jf));
     ordering_.push_back(key1);
-    key_idx_[key1] = key_idx_[key0] + 1;
+    key_idx_[key1] = key_idx_.size();
     cov_cache_.entries.insert(std::make_pair(std::make_pair(key1, key1), cov1));
   }
+  gttoc_(a);
 
   if (meas_graph.empty())
     return;
 
+  gttic_(b);
   size_t dim = 0;
   KeySet meas_key_set;
   for (const GaussianFactor::shared_ptr &gf : *linear_meas_graph) {
@@ -230,6 +242,9 @@ void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
   KeyVector meas_keys(meas_key_set.begin(), meas_key_set.end());
   std::sort(meas_keys.begin(), meas_keys.end(), [this](const Key &key0, const Key &key1) {
     return key_idx_[key0] < key_idx_[key1]; });
+  KeyVector updated_keys(updated_keys_.begin(), updated_keys_.end());
+  std::sort(updated_keys.begin(), updated_keys.end(), [this](const Key &key0, const Key &key1) {
+    return key_idx_[key0] < key_idx_[key1]; });
   std::unordered_map<Key, size_t> meas_key_col;
   size_t r = 0, cols = 0;
   for (Key key : meas_keys) {
@@ -237,7 +252,9 @@ void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
     r += key_dim(key);
     cols += key_dim(key);
   }
+  gttoc_(b);
 
+  gttic_(c);
   Matrix A = Matrix::Zero(dim, cols);
   r = 0;
   for (const GaussianFactor::shared_ptr &gf : *linear_meas_graph) {
@@ -262,45 +279,76 @@ void FastMarginals2::update(const NonlinearFactorGraph &odom_graph,
     r += key_dim(key0);
   }
 
-  Matrix S = (Matrix::Identity(dim, dim) + A * Sigma_A * A.transpose()).inverse();
+  Matrix S = A.transpose() * (Matrix::Identity(dim, dim) + A * Sigma_A * A.transpose()).inverse() * A;
+  gttoc_(c);
 
-  for (auto it = ordering_.rbegin(); it != ordering_.rend(); ++it) {
-    if (updated_keys.find(*it) == updated_keys.end())
-      continue;
+  gttic_(d);
+  size_t rows = 0;
+  std::unordered_map<Key, size_t> key_idx;
+  for (Key key : updated_keys) {
+    key_idx[key] = rows;
+    rows += key_dim(key);
+  }
 
+  for (auto it = updated_keys.rbegin(); it != updated_keys.rend(); ++it) {
     size_t d = key_dim(*it);
     Matrix Sigma = Matrix::Zero(d, cols);
     for (Key key : meas_keys) {
       Sigma.block(0, meas_key_col[key], d, key_dim(key)) = propagate(*it, key);
     }
 
-    Matrix Delta = -Sigma * A.transpose() * S * A * Sigma.transpose();
+    Matrix Delta = -Sigma * S * Sigma.transpose();
     cov_cache_.entries[std::make_pair(*it, *it)] += Delta;
   }
+
+//  Matrix Sigma(rows, cols);
+//  for (auto it1 = meas_keys.rbegin(); it1 != meas_keys.rend(); ++it1) {
+//    if (new_keys_.find(*it1) != new_keys_.end())
+//      continue;
+//    for (auto it0 = updated_keys.rbegin(); it0 != updated_keys.rend(); ++it0) {
+//      Sigma.block(key_idx[*it0], meas_key_col[*it1], key_dim(*it0), key_dim(*it1)) = propagate(*it0, *it1);
+//    }
+//  }
+//
+//  Key last_key = (*odom_graph.begin())->front();
+//  Matrix Sigma_n(rows, key_dim(last_key));
+//  for (auto it0 = updated_keys.rbegin(); it0 != updated_keys.rend(); ++it0) {
+//    Sigma_n.block(key_idx[*it0], 0, key_dim(*it0), key_dim(last_key)) = propagate(*it0, last_key);
+//  }
+//
+//  for (auto it1 = meas_keys.rbegin(); it1 != meas_keys.rend(); ++it1) {
+//    if (new_keys_.find(*it1) == new_keys_.end())
+//      continue;
+//    Sigma.block(0, meas_key_col[*it1], rows, key_dim(*it1)) = Sigma_n * Fs[*it1].transpose();
+//  }
+//
+//  for (auto it0 = updated_keys.begin(); it0 != updated_keys.end(); ++it0) {
+//    Matrix Delta = -Sigma.block(key_idx[*it0], 0, key_dim(*it0), cols) * S * Sigma.block(key_idx[*it0], 0, key_dim(*it0), cols).transpose();
+//    cov_cache_.entries[std::make_pair(*it0, *it0)] += Delta;
+//  }
+  gttoc_(d);
 }
 
 Matrix FastMarginals2::propagate(Key key0, Key key1) {
+  auto key_pair = std::make_pair(key0, key1);
   if (key0 == key1)
-    return cov_cache_.entries[std::make_pair(key0, key1)];
+    return cov_cache_.entries[key_pair];
 
   if (key_idx_[key0] > key_idx_[key1])
     return propagate(key1, key0).transpose();
 
-  auto key_pair = std::make_pair(key0, key1);
   auto it = cov_cache_.entries.find(key_pair);
   if (it == cov_cache_.entries.end()) {
     if (new_keys_.find(key1) != new_keys_.end()) {
-      Key key01 = Symbol(symbolChr(key1), symbolIndex(key1) - 1);
-
-      auto factor = linear_odom_factors_[key1];
-      Matrix H1 = factor->getA(factor->find(factor->front()));
-      Matrix H2 = factor->getA(factor->find(factor->back()));
-      Matrix F = -H2.inverse() * H1;
-
-      cov_cache_.entries[key_pair] = propagate(key0, key01) * F.transpose();
+      if (key_idx_[key0] < size0_)
+        cov_cache_.entries[key_pair] = propagate(key0, last_key_) * Fs_[key1].transpose();
+      else
+        cov_cache_.entries[key_pair] = propagate(key0, Symbol('x', symbolIndex(key1) - 1).key()) * F_[key1].transpose();
       return cov_cache_.entries[key_pair];
     } else {
-      return recover(key0, key1);
+      Matrix m = recover(key0, key1);
+      fast_marginals_->cov_cache_.entries.insert(std::make_pair(key_pair, m));
+      return m;
     }
   } else
     return it->second;

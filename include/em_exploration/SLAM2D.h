@@ -56,6 +56,8 @@ struct CovarianceCache {
 };
 
 class FastMarginals {
+  friend class FastMarginals2;
+
  public:
   FastMarginals(const std::shared_ptr<gtsam::ISAM2> &isam2) : isam2_(isam2) {
     initialize();
@@ -87,14 +89,18 @@ class FastMarginals {
   std::vector<gtsam::Key> ordering_;
   boost::unordered_map<gtsam::Key, size_t> key_idx_;
   CovarianceCache cov_cache_;
+  std::unordered_map<gtsam::Key, gtsam::Matrix> Fs_;
+  std::unordered_map<gtsam::Key, gtsam::Matrix> F_;
+  gtsam::Key last_key_;
+  size_t size0_;
 };
 
 class FastMarginals2 : public FastMarginals {
  public:
   FastMarginals2(const std::shared_ptr<gtsam::ISAM2> &isam2) : FastMarginals(isam2) {}
 
-  FastMarginals2(const FastMarginals &fast_marginals)
-      : FastMarginals(fast_marginals) {}
+  FastMarginals2(const std::shared_ptr<FastMarginals> &fast_marginals)
+      : FastMarginals(*fast_marginals), fast_marginals_(fast_marginals) {}
 
   void update(const gtsam::NonlinearFactorGraph &odom_graph,
               const gtsam::NonlinearFactorGraph &meas_graph,
@@ -106,6 +112,7 @@ class FastMarginals2 : public FastMarginals {
   gtsam::KeySet new_keys_;
   std::unordered_map<gtsam::Key, gtsam::JacobianFactor::shared_ptr> linear_odom_factors_;
 
+  std::shared_ptr<FastMarginals> fast_marginals_;
 };
 
 class SLAM2D {

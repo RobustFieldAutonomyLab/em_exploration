@@ -2,6 +2,7 @@
 #include <ctime>
 
 #define LEAFONLY
+#define USE_FAST_MARGINAL2
 
 namespace em_exploration {
 
@@ -266,6 +267,7 @@ double EMPlanner2D::calculateUncertainty(EMPlanner2D::Node::shared_ptr node) con
 double EMPlanner2D::calculateUncertainty_EM(Node::shared_ptr node) const {
   if (parameter_.verbose)
     std::cout << "Calculate uncertainty - EM." << std::endl;
+  assert(node->virtual_map != nullptr);
 
   double uncertainty = 0.0;
   for (auto it = node->virtual_map->cbeginVirtualLandmark();
@@ -397,10 +399,17 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
   gtsam::Values initial_estimate;
   gtsam::KeySet updated_keys = updated_keys_;
 
+  std::stack<Node::shared_ptr> s;
   EMPlanner2D::Node::shared_ptr node = leaf;
   while (node != root_) {
     if (node->isam != nullptr)
       break;
+    s.push(node);
+    node = node->parent.lock();
+  }
+  while (!s.empty()) {
+    node = s.top();
+    s.pop();
 
     for (int i = 0; i < node->odometry_factors.size(); ++i) {
       auto factor = node->odometry_factors[i];
@@ -409,21 +418,40 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
     }
     updated_keys.insert(node->odometry_factors.back()->back());
     meas_graph.add(node->measurement_factors);
-
-    node = node->parent.lock();
   }
 
-  FastMarginals2 fm2(*slam_->getMarginals());
+#ifdef USE_FAST_MARGINAL2
+  FastMarginals2 fm2(slam_->getMarginals());
   fm2.update(odom_graph, meas_graph, initial_estimate, updated_keys);
+#else
+  gttic_(a);
+  gtsam::NonlinearFactorGraph graph;
+  graph.add(odom_graph);
+  graph.add(meas_graph);
+  gtsam::ISAM2 isam2(*root_->isam);
+  isam2.update(graph, initial_estimate);
+  gttoc_(a);
+#endif
 
   leaf->map.reset(new Map(root_->map->getParameter()));
   for (gtsam::Key key : updated_keys) {
+#ifdef USE_FAST_MARGINAL2
     Eigen::Matrix3d cov = fm2.marginalCovariance(key);
+#else
+    gttic_(b);
+    Eigen::Matrix3d cov = isam2.marginalCovariance(key);
+    gttoc_(b);
+#endif
     if (initial_estimate.exists(key))
       leaf->map->addVehicle(VehicleBeliefState(initial_estimate.at<Pose2>(key), cov.inverse()));
     else
       leaf->map->addVehicle(VehicleBeliefState(values_->at<Pose2>(key), cov.inverse()));
   }
+#ifdef USE_FAST_MARGINAL2
+  leaf->state.information = fm2.marginalCovariance(SLAM2D::getVehicleSymbol(leaf->key).key()).inverse();
+#else
+  leaf->state.information = isam2.marginalCovariance(SLAM2D::getVehicleSymbol(leaf->key).key()).inverse();
+#endif
 
 //  leaf->isam.reset(new gtsam::ISAM2(*node->isam));
 //  leaf->isam->update(graph, initial_estimate);
@@ -775,11 +803,15 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
     num_nodes++;
   }
 
+//  std::cout << "root: " << root_->distance << ", " << root_->uncertainty << ", " << distance_weight_ << ", " << root_->cost << std::endl;
   for (Node::shared_ptr node : nodes_) {
     if (node->children.size() != 0)
       continue;
 
     updateTrajectory_EM(node);
+    node->virtual_map.reset(new VirtualMap(*root_->virtual_map));
+    node->virtual_map->updateInformation(*node->map, sensor_model_);
+
     node->uncertainty = calculateUncertainty(node);
     node->cost = costFunction(node);
 
@@ -787,9 +819,13 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
       best_node_ = node;
     }
 
-    if (node->cost < best_node_->cost)
+    if (best_node_ == root_ || node->cost < best_node_->cost)
       best_node_ = node;
+
+//    std::cout << "node: " << node->distance << ", " << node->uncertainty << ", " << distance_weight_ << ", " << node->cost << std::endl;
   }
+  gtsam::tictoc_print_();
+  gtsam::tictoc_reset_();
 
   int vl_known = 0;
   for (auto it = best_node_->virtual_map->cbeginVirtualLandmark();
@@ -800,65 +836,6 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
   double percentage = (double) vl_known / virtual_map.getVirtualLandmarkSize();
   std::cout << "Map coverage: " << percentage << std::endl;
 
-  if (best_node_ == root_) {
-    if (percentage < 0.95) {
-      if (fabs(distance_weight_) < 1e-5) {
-        std::cout << "Failed to find the best path. Stop because the distance weight is zero." << std::endl;
-        update_distance_weight_ = true;
-        return OptimizationResult::NO_SOLUTION;
-      }
-
-//      while (true) {
-//        double dw = parameter_.distance_weight0 * parameter_.d_weight;
-//        distance_weight_ = (distance_weight_ - dw < 0) ? 0.0 : distance_weight_ - dw;
-//        if (fabs(distance_weight_) < 1e-5) {
-//          std::cout << "Failed to find the best path. Stop because the distance weight is zero." << std::endl;
-//          update_distance_weight_ = true;
-//          return OptimizationResult::NO_SOLUTION;
-//        }
-//        for (Node::shared_ptr node : nodes_) {
-//          if (node->children.size() != 0)
-//            continue;
-//
-//          node->cost = costFunction(node);
-//
-//          if (node->cost < best_node_->cost)
-//            best_node_ = node;
-//        }
-//        if (best_node_ != root_)
-//          return OptimizationResult::SUCCESS;
-//      }
-
-      double dw = parameter_.distance_weight0 * parameter_.d_weight;
-      distance_weight_ = (distance_weight_ - dw < 0) ? 0.0 : distance_weight_ - dw;
-      if (fabs(distance_weight_) < 1e-5) {
-        std::cout << "Failed to find the best path. Stop because the distance weight is zero." << std::endl;
-        update_distance_weight_ = true;
-        return OptimizationResult::NO_SOLUTION;
-      }
-      for (Node::shared_ptr node : nodes_) {
-        if (node->children.size() != 0)
-          continue;
-
-        node->cost = costFunction(node);
-
-        if (node->cost < best_node_->cost)
-          best_node_ = node;
-      }
-      if (best_node_ != root_) {
-//        parameter_.safe_distance = safe_distance_backup;
-        return OptimizationResult::SUCCESS;
-      } else {
-        update_distance_weight_ = false;
-//        parameter_.safe_distance = safe_distance_backup;
-        return optimize(slam, virtual_map);
-      }
-    } else {
-      return OptimizationResult::TERMINATION;
-    }
-  }
-  update_distance_weight_ = true;
-//  parameter_.safe_distance = safe_distance_backup;
   return OptimizationResult::SUCCESS;
 }
 
@@ -1048,10 +1025,10 @@ void EMPlanner2D::initialize(const SLAM2D &slam, const VirtualMap &virtual_map) 
   max_nodes_ = static_cast<int>(floor(vl_known * parameter_.max_nodes));
   double percentage_known = (double) vl_known / virtual_map_->getVirtualLandmarkSize();
 
-  if (update_distance_weight_) {
+//  if (update_distance_weight_) {
     distance_weight_ = parameter_.distance_weight0
         - (parameter_.distance_weight0 - parameter_.distance_weight1) * percentage_known;
-  }
+//  }
 
   if (parameter_.verbose) {
     std::cout << "  Graph size: " << root_->measurement_factors.size() << std::endl;
