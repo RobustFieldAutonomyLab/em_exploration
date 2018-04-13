@@ -12,9 +12,15 @@
 
 #include "em_exploration/Simulation2D.h"
 #include "em_exploration/RNG.h"
+#include "em_exploration/FastMarginals.h"
+
+#define USE_FAST_MARGINAL
+
+#include <Eigen/SparseCore>
+#include <boost/unordered_map.hpp>
+#include <unordered_map>
 
 namespace em_exploration {
-
 class SLAM2D {
 
  public:
@@ -76,6 +82,12 @@ class SLAM2D {
     return gtsam::Symbol('l', key);
   }
 
+#ifdef USE_FAST_MARGINAL
+  std::shared_ptr<FastMarginals> getMarginals() const {
+    return marginals_;
+  }
+#endif
+
  private:
   double optimizeInPlacePerturbation(const gtsam::ISAM2Clique::shared_ptr &clique,
                                    gtsam::VectorValues &result) const;
@@ -86,7 +98,11 @@ class SLAM2D {
   std::shared_ptr<gtsam::ISAM2> isam_;
 
   mutable bool marginals_update_;
+#ifdef USE_FAST_MARGINAL
+  mutable std::shared_ptr<FastMarginals> marginals_;
+#else
   mutable std::shared_ptr<gtsam::Marginals> marginals_;
+#endif
 
   gtsam::NonlinearFactorGraph graph_;
   gtsam::Values initial_estimate_;

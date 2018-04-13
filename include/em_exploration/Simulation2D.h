@@ -218,6 +218,7 @@ struct VehicleBeliefState {
   bool core_vehicle; /// Only core vehicle has uncertainty information.
 
   Eigen::Matrix3d covariance() const;
+  Eigen::Matrix3d globalCovariance() const;
 
   void print() const;
 };

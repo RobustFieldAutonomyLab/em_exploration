@@ -2,6 +2,7 @@
 #include <ctime>
 
 #define LEAFONLY
+#define USE_FAST_MARGINAL2
 
 namespace em_exploration {
 
@@ -198,8 +199,8 @@ bool EMPlanner2D::connectNode(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::N
   else
     node->key = parent->key + 1;
 
-  node->map.reset(new Map(*parent->map));
-  node->virtual_map.reset(new VirtualMap(*parent->virtual_map));
+//  node->map.reset(new Map(*parent->map));
+//  node->virtual_map.reset(new VirtualMap(*parent->virtual_map));
   node->distance = parent->distance + distanceBetweenNodes(node, parent);
 
   if (parameter_.verbose) {
@@ -266,6 +267,7 @@ double EMPlanner2D::calculateUncertainty(EMPlanner2D::Node::shared_ptr node) con
 double EMPlanner2D::calculateUncertainty_EM(Node::shared_ptr node) const {
   if (parameter_.verbose)
     std::cout << "Calculate uncertainty - EM." << std::endl;
+  assert(node->virtual_map != nullptr);
 
   double uncertainty = 0.0;
   for (auto it = node->virtual_map->cbeginVirtualLandmark();
@@ -392,49 +394,81 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
   if (parameter_.verbose)
     std::cout << "Optimize trajectory." << std::endl;
 
-  gtsam::NonlinearFactorGraph graph;
+  gtsam::NonlinearFactorGraph odom_graph;
+  gtsam::NonlinearFactorGraph meas_graph;
   gtsam::Values initial_estimate;
+  gtsam::KeySet updated_keys = updated_keys_;
 
+  std::stack<Node::shared_ptr> s;
   EMPlanner2D::Node::shared_ptr node = leaf;
-  while (node != nullptr) {
+  while (node != root_) {
     if (node->isam != nullptr)
       break;
+    s.push(node);
+    node = node->parent.lock();
+  }
+  while (!s.empty()) {
+    node = s.top();
+    s.pop();
 
     for (int i = 0; i < node->odometry_factors.size(); ++i) {
       auto factor = node->odometry_factors[i];
-      graph.add(factor);
-
+      odom_graph.add(factor);
       initial_estimate.insert(factor->back(), node->poses[i]);
     }
-
-    for (auto factor : node->measurement_factors)
-      graph.add(factor);
-
-    node = node->parent.lock();
-  }
-  assert(node->isam);
-
-  leaf->isam.reset(new gtsam::ISAM2(*node->isam));
-  leaf->isam->update(graph, initial_estimate);
-
-  const gtsam::ISAM2 &isam = *leaf->isam;
-
-  for (auto it = leaf->map->beginLandmark(); it != leaf->map->endLandmark(); ++it) {
-    Eigen::Matrix2d cov = isam.marginalCovariance(SLAM2D::getLandmarkSymbol(it->first));
-    it->second.information = inverse(cov);
+    updated_keys.insert(node->odometry_factors.back()->back());
+    meas_graph.add(node->measurement_factors);
   }
 
-  for (auto it = leaf->map->beginTrajectory(); it != leaf->map->endTrajectory(); ++it) {
-    if (!it->core_vehicle)
-      continue;
-    unsigned int x = static_cast<unsigned int>(std::distance(leaf->map->beginTrajectory(), it));
-    Eigen::Matrix3d cov = isam.marginalCovariance(SLAM2D::getVehicleSymbol(x));
-    Pose2 R(it->pose.r(), Point2());
-    cov = R.matrix() * cov * R.matrix().transpose();
-    it->information = inverse(cov);
-  }
+#ifdef USE_FAST_MARGINAL2
+  FastMarginals2 fm2(slam_->getMarginals());
+  fm2.update(odom_graph, meas_graph, initial_estimate, updated_keys);
+#else
+  gtsam::NonlinearFactorGraph graph;
+  graph.add(odom_graph);
+  graph.add(meas_graph);
+  gtsam::ISAM2 isam2(*root_->isam);
+  isam2.update(graph, initial_estimate);
+#endif
 
-  leaf->state.information = leaf->map->getCurrentVehicle().information;
+  leaf->map.reset(new Map(root_->map->getParameter()));
+  for (gtsam::Key key : updated_keys) {
+#ifdef USE_FAST_MARGINAL2
+    Eigen::Matrix3d cov = fm2.marginalCovariance(key);
+#else
+    Eigen::Matrix3d cov = isam2.marginalCovariance(key);
+#endif
+    if (initial_estimate.exists(key))
+      leaf->map->addVehicle(VehicleBeliefState(initial_estimate.at<Pose2>(key), cov.inverse()));
+    else
+      leaf->map->addVehicle(VehicleBeliefState(values_->at<Pose2>(key), cov.inverse()));
+  }
+#ifdef USE_FAST_MARGINAL2
+  leaf->state.information = fm2.marginalCovariance(SLAM2D::getVehicleSymbol(leaf->key).key()).inverse();
+#else
+  leaf->state.information = isam2.marginalCovariance(SLAM2D::getVehicleSymbol(leaf->key).key()).inverse();
+#endif
+
+//  leaf->isam.reset(new gtsam::ISAM2(*node->isam));
+//  leaf->isam->update(graph, initial_estimate);
+//  const gtsam::ISAM2 &isam = *leaf->isam;
+
+//  for (auto it = leaf->map->beginLandmark(); it != leaf->map->endLandmark(); ++it) {
+//    Eigen::Matrix2d cov = isam.marginalCovariance(SLAM2D::getLandmarkSymbol(it->first));
+//    it->second.information = inverse(cov);
+//  }
+//
+//  for (auto it = leaf->map->beginTrajectory(); it != leaf->map->endTrajectory(); ++it) {
+//    if (!it->core_vehicle)
+//      continue;
+//    unsigned int x = static_cast<unsigned int>(std::distance(leaf->map->beginTrajectory(), it));
+//    Eigen::Matrix3d cov = isam.marginalCovariance(SLAM2D::getVehicleSymbol(x));
+//    Pose2 R(it->pose.r(), Point2());
+//    cov = R.matrix() * cov * R.matrix().transpose();
+//    it->information = inverse(cov);
+//  }
+
+//  leaf->state.information = leaf->map->getCurrentVehicle().information;
 }
 
 void EMPlanner2D::updateTrajectory_OG_SHANNON(Node::shared_ptr leaf) {
@@ -549,9 +583,9 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
 
       SimpleControlModel::ControlState
           control_state = Simulator2D::move(origin, odom, control_model_, true, false);
-      Eigen::Matrix3d Q = control_state.getSigmas().asDiagonal();
-      Q = Q * Q;
-      cov = control_state.getFx1() * cov * control_state.getFx1().transpose() + Q;
+//      Eigen::Matrix3d Q = control_state.getSigmas().asDiagonal();
+//      Q = Q * Q;
+//      cov = control_state.getFx1() * cov * control_state.getFx1().transpose() + Q;
 
       unsigned int node_key = parent->key + step + 1;
       unsigned int parent_key = parent->key + step;
@@ -560,10 +594,10 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
 
       node->odometry_factors.push_back(dubins_path_factor);
 
-      VehicleBeliefState state(node->poses[step]);
-      state.information = inverse(cov);
-      state.core_vehicle = (step == node->poses.size() - 1);
-      node->map->addVehicle(state);
+//      VehicleBeliefState state(node->poses[step]);
+//      state.information = inverse(cov);
+//      state.core_vehicle = (step == node->poses.size() - 1);
+//      node->map->addVehicle(state);
 
       origin = node->poses[step];
     }
@@ -576,9 +610,9 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
 
     SimpleControlModel::ControlState
         control_state = Simulator2D::move(origin, odom, control_model_, true, false);
-    Eigen::Matrix3d Q = control_state.getSigmas().asDiagonal();
-    Q = Q * Q;
-    cov = control_state.getFx1() * cov * control_state.getFx1().transpose() + Q;
+//    Eigen::Matrix3d Q = control_state.getSigmas().asDiagonal();
+//    Q = Q * Q;
+//    cov = control_state.getFx1() * cov * control_state.getFx1().transpose() + Q;
 
     unsigned int node_key = node->key;
     unsigned int parent_key = parent->key;
@@ -587,10 +621,10 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
         = SLAM2D::buildOdometryFactor(parent_key, node_key, control_state);
     node->odometry_factors.push_back(odometry_factor);
 
-    VehicleBeliefState state(end);
-    state.information = inverse(cov);
-    state.core_vehicle = true;
-    node->map->addVehicle(state);
+//    VehicleBeliefState state(end);
+//    state.information = inverse(cov);
+//    state.core_vehicle = true;
+//    node->map->addVehicle(state);
 
     if (parameter_.verbose)
       std::cout << "  Done with one step model." << std::endl;
@@ -602,7 +636,7 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
       = Simulator2D::measure(*map_, node->state.pose, sensor_model_, false, false);
 
   if (measurements.size() == 0) {
-    node->virtual_map->updateInformation(node->state, sensor_model_);
+//    node->virtual_map->updateInformation(node->state, sensor_model_);
 
     if (parameter_.verbose)
       std::cout << "  No measurement and update information." << std::endl;
@@ -616,8 +650,8 @@ void EMPlanner2D::updateNodeInformation_EM(Node::shared_ptr node) {
       node->measurement_factors.push_back(factor);
     }
 
-    updateTrajectory_EM(node);
-    node->virtual_map->updateInformation(*node->map, sensor_model_);
+//    updateTrajectory_EM(node);
+//    node->virtual_map->updateInformation(*node->map, sensor_model_);
 
     if (parameter_.verbose)
       std::cout << "  Done and update information" << std::endl;
@@ -720,6 +754,83 @@ void EMPlanner2D::updateNode(EMPlanner2D::Node::shared_ptr node) {
     std::cout << "  Done: ";
     node->print();
   }
+}
+
+EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const VirtualMap &virtual_map) {
+  initialize(slam, virtual_map);
+
+  double safe_distance_backup = parameter_.safe_distance;
+  // Decrease the safe distance if the vehicle is close to obstacles in the beginning.
+  int nearest = map_->searchLandmarkNearest(map_->getCurrentVehicle());
+  if (nearest < map_->getLandmarkSize()) {
+    double distance = map_->getLandmark(nearest).point.distance(map_->getCurrentVehicle().pose.t());
+    if (distance < parameter_.safe_distance) {
+      parameter_.safe_distance = distance - 0.1;
+    }
+  }
+
+  int num_nodes = 0;
+  int failed = 0;
+  while (num_nodes < max_nodes_) {
+    if (parameter_.verbose)
+      std::cout << "Start. sampling num: " << num_nodes << std::endl;
+
+    EMPlanner2D::Node::shared_ptr node = sampleNode();
+    EMPlanner2D::Node::shared_ptr parent = nearestNode(node);
+
+    if (!connectNode(node, parent)) {
+      failed += 1;
+      if (failed > 100)
+        return OptimizationResult::SAMPLING_FAILURE;
+      continue;
+    }
+    failed = 0;
+
+    nodes_.push_back(node);
+    parent->children.push_back(node);
+
+    updateNode(node);
+
+    if (parameter_.verbose) {
+      std::cout << "Sample " << num_nodes << " done.";
+      best_node_->print();
+    }
+
+    num_nodes++;
+  }
+
+//  std::cout << "root: " << root_->distance << ", " << root_->uncertainty << ", " << distance_weight_ << ", " << root_->cost << std::endl;
+  for (Node::shared_ptr node : nodes_) {
+    if (node->children.size() != 0)
+      continue;
+
+    updateTrajectory_EM(node);
+    node->virtual_map.reset(new VirtualMap(*root_->virtual_map));
+    node->virtual_map->updateInformation(*node->map, sensor_model_);
+
+    node->uncertainty = calculateUncertainty(node);
+    node->cost = costFunction(node);
+
+    if (parameter_.algorithm == OptimizationAlgorithm::SLAM_OG_SHANNON && best_node_ == root_) {
+      best_node_ = node;
+    }
+
+    if (best_node_ == root_ || node->cost < best_node_->cost)
+      best_node_ = node;
+
+//    std::cout << "node: " << node->distance << ", " << node->uncertainty << ", " << distance_weight_ << ", " << node->cost << std::endl;
+  }
+
+  int vl_known = 0;
+  for (auto it = best_node_->virtual_map->cbeginVirtualLandmark();
+       it != best_node_->virtual_map->cendVirtualLandnmark(); ++it)
+    if (it->probability < parameter_.occupancy_threshold)
+      vl_known++;
+
+  double percentage = (double) vl_known / virtual_map.getVirtualLandmarkSize();
+  std::cout << "Map coverage: " << percentage << std::endl;
+
+  return OptimizationResult::SUCCESS;
 }
 
 EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const VirtualMap &virtual_map) {
@@ -863,9 +974,15 @@ void EMPlanner2D::initialize(const SLAM2D &slam, const VirtualMap &virtual_map) 
   if (parameter_.verbose)
     std::cout << "Initialize planner." << std::endl;
 
+  slam_ = &slam;
   map_ = &slam.getMap();
   virtual_map_ = &virtual_map;
   values_.reset(new gtsam::Values(slam.getISAM2()->calculateBestEstimate()));
+  for (int i = 0; i < map_->getTrajectorySize(); ++i) {
+    const auto &v = map_->getVehicle(i);
+    if (v.core_vehicle)
+      updated_keys_.insert(SLAM2D::getVehicleSymbol(i).key());
+  }
 
   root_.reset(new EMPlanner2D::Node(map_->getCurrentVehicle()));
   assert(root_->state.core_vehicle);
@@ -902,10 +1019,10 @@ void EMPlanner2D::initialize(const SLAM2D &slam, const VirtualMap &virtual_map) 
   max_nodes_ = static_cast<int>(floor(vl_known * parameter_.max_nodes));
   double percentage_known = (double) vl_known / virtual_map_->getVirtualLandmarkSize();
 
-  if (update_distance_weight_) {
+//  if (update_distance_weight_) {
     distance_weight_ = parameter_.distance_weight0
         - (parameter_.distance_weight0 - parameter_.distance_weight1) * percentage_known;
-  }
+//  }
 
   if (parameter_.verbose) {
     std::cout << "  Graph size: " << root_->measurement_factors.size() << std::endl;

@@ -117,7 +117,8 @@ PYBIND11_MODULE(ss2d, m) {
       .def_readwrite("core_vehicle", &VehicleBeliefState::core_vehicle)
       .def_readwrite("pose", &VehicleBeliefState::pose)
       .def_readwrite("information", &VehicleBeliefState::information)
-      .def_property_readonly("covariance", &VehicleBeliefState::covariance);
+      .def_property_readonly("covariance", &VehicleBeliefState::covariance)
+      .def_property_readonly("global_covariance", &VehicleBeliefState::globalCovariance);
 
   py::class_<LandmarkBeliefState>(m, "LandmarkBeliefState")
       .def(py::init<>())
