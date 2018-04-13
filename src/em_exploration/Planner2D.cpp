@@ -424,13 +424,11 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
   FastMarginals2 fm2(slam_->getMarginals());
   fm2.update(odom_graph, meas_graph, initial_estimate, updated_keys);
 #else
-  gttic_(a);
   gtsam::NonlinearFactorGraph graph;
   graph.add(odom_graph);
   graph.add(meas_graph);
   gtsam::ISAM2 isam2(*root_->isam);
   isam2.update(graph, initial_estimate);
-  gttoc_(a);
 #endif
 
   leaf->map.reset(new Map(root_->map->getParameter()));
@@ -438,9 +436,7 @@ void EMPlanner2D::updateTrajectory_EM(Node::shared_ptr leaf) {
 #ifdef USE_FAST_MARGINAL2
     Eigen::Matrix3d cov = fm2.marginalCovariance(key);
 #else
-    gttic_(b);
     Eigen::Matrix3d cov = isam2.marginalCovariance(key);
-    gttoc_(b);
 #endif
     if (initial_estimate.exists(key))
       leaf->map->addVehicle(VehicleBeliefState(initial_estimate.at<Pose2>(key), cov.inverse()));
@@ -824,8 +820,6 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
 
 //    std::cout << "node: " << node->distance << ", " << node->uncertainty << ", " << distance_weight_ << ", " << node->cost << std::endl;
   }
-  gtsam::tictoc_print_();
-  gtsam::tictoc_reset_();
 
   int vl_known = 0;
   for (auto it = best_node_->virtual_map->cbeginVirtualLandmark();

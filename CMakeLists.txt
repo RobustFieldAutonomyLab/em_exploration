@@ -23,6 +23,7 @@ set(SOURCE
     src/em_exploration/Distance.cpp
     src/em_exploration/Simulator2D.cpp
     src/em_exploration/SLAM2D.cpp
+    src/em_exploration/FastMarginals.cpp
     src/em_exploration/VirtualMap.cpp
     src/em_exploration/OccupancyMap.cpp
     src/em_exploration/Planner2D.cpp)
