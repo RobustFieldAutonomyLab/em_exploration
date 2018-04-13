@@ -64,7 +64,7 @@ class EMExplorer(SS2D):
         self.save_history = save_history
 
     def plan(self):
-        return self._planner.optimize(self._slam, self._virtual_map)
+        return self._planner.optimize2(self._slam, self._virtual_map)
 
     def follow_dubins_path(self, steps=3):
         # for edge in self._planner.iter_solution():

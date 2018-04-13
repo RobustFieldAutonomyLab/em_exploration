@@ -255,8 +255,8 @@ void SLAM2D::optimize(bool update_covariance) {
 #else
       Eigen::Matrix3d covariance = isam_->marginalCovariance(x);
 #endif
-      Pose2 R(pose.r(), Point2());
-      covariance = R.matrix() * covariance * R.matrix().transpose();
+//      Pose2 R(pose.r(), Point2());
+//      covariance = R.matrix() * covariance * R.matrix().transpose();
 
       VehicleBeliefState state(pose, inverse(covariance));
       if (i < map_.getTrajectorySize()) {

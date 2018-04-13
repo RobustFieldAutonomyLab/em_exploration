@@ -218,8 +218,11 @@ void VirtualMap::updateInformation(VirtualLandmark &virtual_landmark, const Map 
 }
 
 void VirtualMap::updateInformation(const Map &map, const BearingRangeSensorModel &sensor_model) {
-  for (auto &it : virtual_landmarks_)
+  for (auto &it : virtual_landmarks_) {
     it.updated = false;
+    it.information = (Eigen::Matrix2d() << 1.0 / pow(parameter_.getSigma0(), 2), 0,
+                      0, 1.0 / pow(parameter_.getSigma0(), 2)).finished();
+  }
 
 //    for (VirtualLandmark &l : virtual_landmarks_) {
 //      updateInformation(l, map, sensor_model);
@@ -254,6 +257,9 @@ void VirtualMap::updateInformation(const VehicleBeliefState &state, const Bearin
   std::vector<int> neighbors = searchVirtualLandmarkNeighbors(state, sensor_model.getParameter().getMaxRange(), -1);
 
   for (int n : neighbors) {
+    if (virtual_landmarks_[n].probability < 0.49)
+      continue;
+
     VirtualLandmark temp;
     temp.point = virtual_landmarks_[n].point;
     if (!predictVirtualLandmark(state, temp, sensor_model))
