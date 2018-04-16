@@ -838,9 +838,12 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
       vl_known++;
 
   double percentage = (double) vl_known / virtual_map.getVirtualLandmarkSize();
-  std::cout << "Map coverage: " << percentage << std::endl;
+  // std::cout << "Map coverage: " << percentage << std::endl;
+  best_node_->print();
 
   if (best_node_ == root_) {
+    return OptimizationResult::NO_SOLUTION;
+
     if (percentage < 0.95) {
       if (fabs(distance_weight_) < 1e-5) {
         std::cout << "Failed to find the best path. Stop because the distance weight is zero." << std::endl;

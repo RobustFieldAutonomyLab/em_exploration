@@ -219,6 +219,7 @@ PYBIND11_MODULE(ss2d, m) {
       .def(py::init<const VirtualMap::Parameter &, RNG::SeedType>())
       .def("get_parameter", &VirtualMap::getParameter)
       .def("get_virtual_landmark_size", &VirtualMap::getVirtualLandmarkSize)
+      .def("explored", &VirtualMap::explored)
       .def("update_probability", (void (VirtualMap::*)(const SLAM2D &, const BearingRangeSensorModel &))&VirtualMap::updateProbability)
       .def("update_information", (void (VirtualMap::*)(VirtualMap::VirtualLandmark &,
                                                        const Map &,

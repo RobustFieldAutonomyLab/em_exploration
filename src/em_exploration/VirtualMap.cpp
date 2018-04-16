@@ -44,6 +44,15 @@ VirtualMap &VirtualMap::operator=(const VirtualMap &other) {
   return *this;
 }
 
+double VirtualMap::explored() const {
+  int count = 0;
+  for (int i = 0; i < count_explored_; ++i) {
+    if (virtual_landmarks_[i].probability < 0.49)
+      count++;
+  }
+  return (double) count / count_explored_;
+}
+
 void VirtualMap::updateProbability(const SLAM2D &slam, const BearingRangeSensorModel &sensor_model) {
 //  std::vector<std::shared_ptr<Map>> maps0 = sampleMap(slam);
 
@@ -295,9 +304,27 @@ void VirtualMap::initialize() {
   rows_ = static_cast<int>(floor((parameter_.getMaxY() - parameter_.getMinY())
                                      / parameter_.getResolution()));
 
+  int ext = (int)floor(5.0 / parameter_.getResolution());
   std::vector<Point2> points;
+  for (int row = ext; row < rows_ - ext; ++row) {
+    for (int col = ext; col < cols_ - ext; ++col) {
+      double x = (col + 0.5) * parameter_.getResolution() + parameter_.getMinX();
+      double y = (row + 0.5) * parameter_.getResolution() + parameter_.getMinY();
+      Point2 point(x, y);
+      Eigen::Matrix2d information;
+      information << 1.0 / pow(parameter_.getSigma0(), 2), 0,
+          0, 1.0 / pow(parameter_.getSigma0(), 2);
+      virtual_landmarks_.emplace_back(0.5, point, information);
+
+      points.push_back(point);
+    }
+  }
+  count_explored_ = points.size();
+
   for (int row = 0; row < rows_; ++row) {
     for (int col = 0; col < cols_; ++col) {
+      if (row >= ext && row < rows_ - ext && col >= ext && col < cols_ - ext)
+          continue;
       double x = (col + 0.5) * parameter_.getResolution() + parameter_.getMinX();
       double y = (row + 0.5) * parameter_.getResolution() + parameter_.getMinY();
       Point2 point(x, y);

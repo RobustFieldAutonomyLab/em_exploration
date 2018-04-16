@@ -67,6 +67,8 @@ class VirtualMap {
 
   int getVirtualLandmarkSize() const { return virtual_landmarks_.size(); }
 
+  double explored() const;
+
   std::vector<VirtualLandmark>::const_iterator cbeginVirtualLandmark() const { return virtual_landmarks_.cbegin(); }
 
   std::vector<VirtualLandmark>::const_iterator cendVirtualLandnmark() const { return virtual_landmarks_.cend(); }
@@ -136,6 +138,7 @@ class VirtualMap {
 
   int rows_;
   int cols_;
+  int count_explored_;
 };
 }
 #endif //EM_EXPLORATION_VIRTUALMAP_H

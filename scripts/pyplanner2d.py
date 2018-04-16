@@ -68,7 +68,7 @@ class EMExplorer(SS2D):
         return planner2d.EMPlanner2D.calculate_utility(self._virtual_map, distance, self._planner_params)
 
     def plan(self):
-        return self._planner.optimize(self._slam, self._virtual_map)
+        return self._planner.optimize(self._slam, self._virtual_map) == planner2d.EMPlanner2D.OptimizationResult.SUCCESS
 
     def follow_dubins_path(self, steps=3):
         # for edge in self._planner.iter_solution():

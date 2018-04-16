@@ -8,7 +8,7 @@ from gym.utils import seeding
 
 try:
     from pyplanner2d import EMExplorer
-    from utils import load_config, plot_virtual_map, plot_virtual_map_cov
+    from utils import load_config, plot_virtual_map, plot_virtual_map_cov, plot_path
 except ImportError as e:
     raise error.DependencyNotInstalled('{}. Build em_exploration and export PYTHONPATH=build_dir'.format(e))
 
@@ -37,18 +37,19 @@ class ExplorationEnv(gym.Env):
                             for t in self._rotation_set]
         self.action_space = spaces.Discrete(n=num_actions)
         assert(len(self._action_set) == num_actions)
+        self._done = False
 
         rows, cols = self._sim._virtual_map.to_array().shape
         self._max_sigma = self._sim._virtual_map.get_parameter().sigma0
         min_x, max_x = self._sim._map_params.min_x, self._sim._map_params.max_x
         min_y, max_y = self._sim._map_params.min_y, self._sim._map_params.max_y
-        self._position_x = spaces.Box(low=min_x, high=max_x)
-        self._position_y = spaces.Box(low=min_y, high=max_y)
-        self._position_theta = spaces.Box(low=-math.pi, high=math.pi)
-        self._vm_cov_sigma = spaces.Box(low=0, high=self._max_sigma, shape=(rows, cols))
-        self._vm_cov_angle = spaces.Box(low=-math.pi, high=math.pi, shape=(rows, cols))
-        self._vm_prob = spaces.Box(low=0.0, high=1.0, shape=(rows, cols))
-        self.observation_space = spaces.Tuple([self._vm_prob,
+        self._pose = spaces.Box(low=np.array([min_x, min_y, -math.pi]),
+                                high=np.array([max_x, max_y, math.pi]), dtype=np.float32)
+        self._vm_cov_sigma = spaces.Box(low=0, high=self._max_sigma, dtype=np.float32, shape=(rows, cols))
+        self._vm_cov_angle = spaces.Box(low=-math.pi, high=math.pi, dtype=np.float32, shape=(rows, cols))
+        self._vm_prob = spaces.Box(low=0.0, high=1.0, shape=(rows, cols), dtype=np.float32)
+        self.observation_space = spaces.Tuple([self._pose,
+                                               self._vm_prob,
                                                self._vm_cov_sigma,
                                                self._vm_cov_angle])
 
@@ -58,7 +59,7 @@ class ExplorationEnv(gym.Env):
 
     def _get_obs(self):
         cov_array = self._sim._virtual_map.to_cov_array()
-        self._obs = self._sim.vehicle_position.x, self._sim.vehicle_position.y, self._sim.vehicle_position.theta,\
+        self._obs = np.array([self._sim.vehicle_position.x, self._sim.vehicle_position.y, self._sim.vehicle_position.theta]),\
                     self._sim._virtual_map.to_array(), cov_array[0], cov_array[1]
         return self._obs
 
@@ -80,15 +81,21 @@ class ExplorationEnv(gym.Env):
         return self._get_obs(), u1 - u2, self.done(), {}
 
     def plan(self):
-        self._sim.plan()
+        if not self._sim.plan():
+            self._done = True
+            return []
+
         actions = []
         for edge in self._sim._planner.iter_solution():
             i = np.argmin(np.abs(self._rotation_set - edge.get_odoms()[0].theta))
             actions.insert(0, i)
         return actions
 
+    def status(self):
+        return self._sim._virtual_map.explored()
+
     def done(self):
-        return self._sim.step > self._max_steps
+        return self._done or self._sim.step > self._max_steps or self.status() > 0.9
 
     def reset(self):
         while True:
@@ -120,6 +127,7 @@ class ExplorationEnv(gym.Env):
             else:
                 self._viewer.clf()
                 self._sim.plot()
+                plot_path(self._sim._planner)
                 plt.draw()
             plt.pause(ExplorationEnv.metadata['render.pause'])
         elif mode == 'state':
@@ -156,9 +164,12 @@ if __name__ == '__main__':
     mode = 'human'
     env = ExplorationEnv(config_file, 50)
     env.render(mode=mode)
-    for i in range(20):
+    for i in range(50):
+        if env.done():
+            break
         actions = env.plan()
         for a in actions[:5]:
             obs, reward, done, _ = env.step(a)
-            print 'reward: ', reward, ', done: ', done
+            print 'step: ', env._sim.step, 'reward: ', reward, 'done: ', done, 'explored: ', env.status()
             env.render(mode=mode)
+    plt.pause(1e10)
