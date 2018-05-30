@@ -44,6 +44,15 @@ VirtualMap &VirtualMap::operator=(const VirtualMap &other) {
   return *this;
 }
 
+double VirtualMap::explored() const {
+  int count = 0;
+  for (int i = 0; i < count_explored_; ++i) {
+    if (virtual_landmarks_[i].probability < 0.49)
+      count++;
+  }
+  return (double) count / count_explored_;
+}
+
 void VirtualMap::updateProbability(const SLAM2D &slam, const BearingRangeSensorModel &sensor_model) {
 //  std::vector<std::shared_ptr<Map>> maps0 = sampleMap(slam);
 
@@ -120,6 +129,19 @@ Eigen::MatrixXd VirtualMap::toArray() const {
     array(i / cols_, i % cols_) = virtual_landmarks_[i].probability;
 
   return array;
+}
+
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> VirtualMap::toCovArray() const {
+  Eigen::MatrixXd array_length(rows_, cols_);
+  Eigen::MatrixXd array_angle(rows_, cols_);
+  for (int i = 0; i < virtual_landmarks_.size(); ++i) {
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(virtual_landmarks_[i].covariance());
+    double l = sqrt(es.eigenvalues()[1]);
+    double a = atan2(es.eigenvectors()(1, 1), es.eigenvectors()(0, 1));
+    array_length(i / cols_, i % cols_) = std::min(l, parameter_.getSigma0());
+    array_angle(i / cols_, i % cols_) = a;
+  }
+  return std::make_pair(array_length, array_angle);
 }
 
 std::vector<std::shared_ptr<Map>> VirtualMap::sampleMap(const SLAM2D &slam) {
@@ -254,6 +276,9 @@ int VirtualMap::searchVirtualLandmarkNearest(const VehicleBeliefState &state) co
 void VirtualMap::updateInformation(const VehicleBeliefState &state, const BearingRangeSensorModel &sensor_model) {
   assert(virtual_landmarks_kdtree_);
 
+  if (state.information.determinant() < 1e-10)
+    return;
+
   std::vector<int> neighbors = searchVirtualLandmarkNeighbors(state, sensor_model.getParameter().getMaxRange(), -1);
 
   for (int n : neighbors) {
@@ -282,9 +307,27 @@ void VirtualMap::initialize() {
   rows_ = static_cast<int>(floor((parameter_.getMaxY() - parameter_.getMinY())
                                      / parameter_.getResolution()));
 
+  int ext = (int)floor(5.0 / parameter_.getResolution());
   std::vector<Point2> points;
+  for (int row = ext; row < rows_ - ext; ++row) {
+    for (int col = ext; col < cols_ - ext; ++col) {
+      double x = (col + 0.5) * parameter_.getResolution() + parameter_.getMinX();
+      double y = (row + 0.5) * parameter_.getResolution() + parameter_.getMinY();
+      Point2 point(x, y);
+      Eigen::Matrix2d information;
+      information << 1.0 / pow(parameter_.getSigma0(), 2), 0,
+          0, 1.0 / pow(parameter_.getSigma0(), 2);
+      virtual_landmarks_.emplace_back(0.5, point, information);
+
+      points.push_back(point);
+    }
+  }
+  count_explored_ = points.size();
+
   for (int row = 0; row < rows_; ++row) {
     for (int col = 0; col < cols_; ++col) {
+      if (row >= ext && row < rows_ - ext && col >= ext && col < cols_ - ext)
+          continue;
       double x = (col + 0.5) * parameter_.getResolution() + parameter_.getMinX();
       double y = (row + 0.5) * parameter_.getResolution() + parameter_.getMinY();
       Point2 point(x, y);
@@ -315,4 +358,3 @@ Eigen::Matrix2d VirtualMap::covarianceIntersection2D(const Eigen::Matrix2d &m1, 
   return w * m1 + (1.0 - w) * m2;
 }
 }
-

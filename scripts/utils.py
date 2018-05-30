@@ -140,12 +140,12 @@ def plot_map(m, ax=None, trajectory=True, label=False, cov=True):
     ax.set_aspect('equal', adjustable='box')
 
 
-def plot_virtual_map(virtual_map, map_params, ax=None, virtual_landmarks=False):
+def plot_virtual_map(virtual_map, map_params, ax=None, virtual_landmarks=False, alpha=0.5):
     if ax is None:
         ax = plt.gca()
 
     array = virtual_map.to_array()
-    ax.imshow(array, origin='low left', alpha=0.5, cmap='bone_r', vmin=0.0, vmax=1.0,
+    ax.imshow(array, origin='low left', alpha=alpha, cmap='bone_r', vmin=0.0, vmax=1.0,
               extent=[map_params.min_x, map_params.max_x,
                       map_params.min_y, map_params.max_y])
 
@@ -153,6 +153,23 @@ def plot_virtual_map(virtual_map, map_params, ax=None, virtual_landmarks=False):
         return
     for vl in virtual_map.iter_virtual_landmarks():
         plot_info_ellipse((vl.point.x, vl.point.y), vl.information, 0.5, None, ec='gray', fill=None)
+
+
+def plot_virtual_map_cov(cov_array, max_sigma, map_params, ax=None, alpha=1.0):
+    if ax is None:
+        ax = plt.gca()
+
+    ax.imshow(cov_array[0], origin='low left', alpha=alpha, cmap='bone_r',
+              vmin=-0.2*max_sigma, vmax=max_sigma+0.2*max_sigma,
+              extent=[map_params.min_x, map_params.max_x,
+                      map_params.min_y, map_params.max_y])
+    x_res = (map_params.max_x - map_params.min_x) / cov_array[0].shape[1]
+    y_res = (map_params.max_y - map_params.min_y) / cov_array[0].shape[0]
+    x = np.arange(0, cov_array[0].shape[1]) * x_res + map_params.min_x + 0.5 * x_res
+    y = np.arange(0, cov_array[0].shape[0]) * y_res + map_params.min_y + 0.5 * y_res
+    XX, YY = np.meshgrid(x, y)
+    ax.quiver(XX, YY, x_res * np.cos(cov_array[1]), x_res * np.sin(cov_array[1]),
+              headwidth=0, headlength=0, pivot='mid', angles='xy', scale_units='xy', scale=1)
 
 
 def plot_pose(pose, sensor_params=None, ax=None):
@@ -508,5 +525,3 @@ def clean_folders():
         folder_name = os.path.split(dirpath)[1]
         if folder_name is not '.' and folder_name not in status:
             shutil.rmtree(folder_name)
-
-

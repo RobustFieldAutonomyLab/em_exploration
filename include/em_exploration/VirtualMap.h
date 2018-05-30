@@ -67,6 +67,8 @@ class VirtualMap {
 
   int getVirtualLandmarkSize() const { return virtual_landmarks_.size(); }
 
+  double explored() const;
+
   std::vector<VirtualLandmark>::const_iterator cbeginVirtualLandmark() const { return virtual_landmarks_.cbegin(); }
 
   std::vector<VirtualLandmark>::const_iterator cendVirtualLandnmark() const { return virtual_landmarks_.cend(); }
@@ -75,8 +77,11 @@ class VirtualMap {
 
   std::vector<std::shared_ptr<Map>>::const_iterator cendSampledMap() const { return samples_.cend(); }
 
+  inline int rows() const { return rows_; }
+  inline int cols() const { return cols_; }
   /// Return an array representing the probabilities
   Eigen::MatrixXd toArray() const;
+  std::pair<Eigen::MatrixXd, Eigen::MatrixXd> toCovArray() const;
 
   int getSampledMapSize() const { return samples_.size(); }
 
@@ -133,6 +138,7 @@ class VirtualMap {
 
   int rows_;
   int cols_;
+  int count_explored_;
 };
 }
 #endif //EM_EXPLORATION_VIRTUALMAP_H

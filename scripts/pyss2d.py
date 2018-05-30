@@ -140,6 +140,11 @@ class SS2D(object):
             self._virtual_map.update_information(self._slam.map, self._sim.sensor_model)
 
     def simulate(self, odom, core=True):
+        estimated_pose =  self._slam.map.get_current_vehicle().pose * ss2d.Pose2(*odom)
+        if not self._map_params.min_x < estimated_pose.x < self._map_params.max_x or\
+           not self._map_params.min_y < estimated_pose.y < self._map_params.max_y:
+           return True
+
         self.move(odom)
 
         obstacle = False
