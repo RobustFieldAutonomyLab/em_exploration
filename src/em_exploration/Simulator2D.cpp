@@ -359,7 +359,7 @@ std::vector<unsigned int> Environment::searchLandmarkNeighbors(const VehicleBeli
 
   if (!landmark_kdtree_built_)
     buildLandmarkKDTree();
-
+    
   std::vector<int> idx = landmark_kdtree_.queryRadiusNeighbors(state.pose.translation(), radius, max_neighbors);
 
   std::vector<unsigned int> neighbors;

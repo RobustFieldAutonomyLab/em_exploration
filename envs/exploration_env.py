@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import gc
 
 import gym
 from gym import error, spaces
@@ -98,6 +99,7 @@ class ExplorationEnv(gym.Env):
         return self._done or self._sim.step > self._max_steps or self.status() > 0.9
 
     def reset(self):
+        self._done = False
         while True:
             # Reset seed in configuration
             seed = self.np_random.randint(0, np.iinfo(np.int32).max, dtype=np.int32)
@@ -161,15 +163,29 @@ if __name__ == '__main__':
     config_file = sys.path[0] + '/../envs/exploration_env.ini'
     ExplorationEnv.metadata['render.pause'] = 0.10
 
+    total_reward = np.empty([0, 0])
+
     mode = 'human'
-    env = ExplorationEnv(config_file, 50)
-    env.render(mode=mode)
-    for i in range(50):
+    env = ExplorationEnv(config_file, 12)
+    t = 0
+    # env.render(mode=mode)
+    for i in range(10000000):
         if env.done():
-            break
+            del env
+            env = ExplorationEnv(config_file, 12)
+            x = env.reset()
         actions = env.plan()
         for a in actions[:5]:
+            t = t + 1
             obs, reward, done, _ = env.step(a)
-            print 'step: ', env._sim.step, 'reward: ', reward, 'done: ', done, 'explored: ', env.status()
-            env.render(mode=mode)
+            print 'step: ', t, 'reward: ', reward, 'done: ', done, 'explored: ', env.status()
+            if env.done():
+                del env
+                env = ExplorationEnv(config_file, 12)
+                x = env.reset()
+                break
+            # total_reward = np.append(total_reward, reward)
+            # np.savetxt("total_reward.csv", total_reward, delimiter=",")
+            # print 'shape', np.shape(obs[1])
+            # env.render(mode=mode)
     plt.pause(1e10)

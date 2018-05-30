@@ -8,6 +8,19 @@ double sqDistanceBetweenPoses(const gtsam::Pose2 &pose1, const gtsam::Pose2 &pos
   return pow(range, 2) + pow(angle * angle_weight, 2);
 }
 
+double sqBDistanceBetweenPoses(const gtsam::Pose2 &pose1, const gtsam::Matrix3 &cov1,
+                               const gtsam::Pose2 &pose2, const gtsam::Matrix3 &cov2) {
+  gtsam::Vector3 e = gtsam::traits<gtsam::Pose2>::Logmap(pose1.between(pose2));
+  gtsam::Matrix3 sigma = (cov1 + cov2) / 2.0;
+  return 0.125 * e.transpose() * sigma.llt().solve(e)
+      + 0.5 * (log(sigma.determinant() + 1e-10) - 0.5 * log(cov1.determinant() + 1e-10) - 0.5 * log(cov2.determinant() + 1e-10));
+}
+
+double sqMDistanceBetweenPoses(const gtsam::Pose2 &pose1, const gtsam::Pose2 &pose2, const gtsam::Matrix3 &cov) {
+  gtsam::Vector3 e = gtsam::traits<gtsam::Pose2>::Logmap(pose1.between(pose2));
+  return e.transpose() * cov.llt().solve(e);
+}
+
 int nearestNeighbor(const std::vector<gtsam::Pose2> &poses, const gtsam::Pose2 &pose, double angle_weight) {
   int n = -1;
   double d = std::numeric_limits<double>::max();
@@ -38,66 +51,26 @@ std::vector<int> radiusNeighbors(const std::vector<gtsam::Pose2> &poses,
   return n;
 }
 
-std::shared_ptr<KDTreeR2> KDTreeR2::clone() const {
-  if (tree_ == nullptr)
-    return nullptr;
-
-  std::shared_ptr<KDTreeR2Data> data(new KDTreeR2Data(*data_));
-
-  std::shared_ptr<KDTreeR2> kdtree;
-  kdtree->data_ = data;
-
-  flann::Matrix<double> dataset(kdtree->data_->data(), kdtree->data_->rows(), 2);
-  kdtree->tree_ = std::make_shared<KDTreeR2Index>(dataset, flann::KDTreeSingleIndexParams());
-  kdtree->tree_->buildIndex();
-
-  return kdtree;
-}
-
 void KDTreeR2::build(const std::vector<gtsam::Point2> &points) {
-  data_ = std::make_shared<KDTreeR2Data>(points.size(), 2);
-  flann::Matrix<double> dataset(data_->data(), points.size(), 2);
-  for (int i = 0; i < points.size(); ++i) {
-    *(dataset[i] + 0) = points[i].x();
-    *(dataset[i] + 1) = points[i].y();
-  }
-
-  tree_ = std::make_shared<KDTreeR2Index>(dataset, flann::KDTreeSingleIndexParams());
-  tree_->buildIndex();
+  data_ = points;
 }
 
 void KDTreeR2::addPoints(const std::vector<gtsam::Point2> &points) {
-  if (!tree_) {
-    build(points);
-  }
-
-  data_->conservativeResize(points.size() + data_->rows(), Eigen::NoChange);
-  flann::Matrix<double> dataset(data_->data() + tree_->size() * 2, points.size(), 2);
-  for (int i = 0; i < points.size(); ++i) {
-    *(dataset[i] + 0) = points[i].x();
-    *(dataset[i] + 1) = points[i].y();
-  }
-
-  tree_->addPoints(dataset, REBUILD_THRESHOLD);
+  data_.insert(data_.end(), points.begin(), points.end());
 }
 
 int KDTreeR2::queryNearestNeighbor(const gtsam::Point2 &point) const {
-  assert(tree_ != nullptr);
+  assert(data_.size() > 0);
 
-  flann::Matrix<double> query(new double[2], 1, 2);
-  *(query[0] + 0) = point.x();
-  *(query[0] + 1) = point.y();
-
-  flann::Matrix<int> indices(new int[1], 1, 1);
-  flann::Matrix<double> dists(new double[1], 1, 1);
-
-  flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, 1.0, false);
-  tree_->knnSearch(query, indices, dists, 1, params);
-  int n = *indices[0];
-
-  delete[] query.ptr();
-  delete[] indices.ptr();
-  delete[] dists.ptr();
+  int n = 0;
+  double min_dist = std::numeric_limits<double>::max();
+  for (int i = 0; i < data_.size(); ++i) {
+    double dist = point.distance(data_[i]);
+    if (dist < min_dist) {
+      min_dist = dist;
+      n = i;
+    }
+  }
 
   return n;
 }
@@ -105,121 +78,66 @@ int KDTreeR2::queryNearestNeighbor(const gtsam::Point2 &point) const {
 std::vector<int> KDTreeR2::queryRadiusNeighbors(const gtsam::Point2 &point,
                                                 double radius,
                                                 int max_neighbors) const {
-  assert(tree_ != nullptr);
+  assert(data_.size() > 0);
 
+  std::vector<int> idx;
   if (radius < 0)
-    return std::vector<int>();
+    return idx;
 
-  flann::Matrix<double> query(new double[2], 1, 2);
-  *(query[0] + 0) = point.x();
-  *(query[0] + 1) = point.y();
+  for (int i = 0; i < data_.size(); ++i) {
+    double dist = point.distance(data_[i]);
+    if (dist < radius) {
+      idx.push_back(i);
+      if (max_neighbors > 0 && idx.size() >= max_neighbors)
+        break;
+    }
+  }
 
-  std::vector<std::vector<int>> indices(1);
-  std::vector<std::vector<double>> dists(1);
-
-  flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, 0, false);
-  params.max_neighbors = max_neighbors;
-  tree_->radiusSearch(query, indices, dists, (float) (radius * radius), params);
-
-  delete[] query.ptr();
-
-  return indices[0];
-}
-
-std::shared_ptr<KDTreeSE2> KDTreeSE2::clone() const {
-  if (tree_ == nullptr)
-    return nullptr;
-
-  std::shared_ptr<KDTreeSE2Data> data(new KDTreeSE2Data(*data_));
-
-  std::shared_ptr<KDTreeSE2> kdtree;
-  kdtree->data_ = data;
-
-  flann::Matrix<double> dataset(kdtree->data_->data(), kdtree->data_->rows(), 4);
-  kdtree->tree_ = std::make_shared<KDTreeSE2Index>(dataset, flann::KDTreeSingleIndexParams(),
-                                                   L2_SE2<double>(angle_weight_));
-  kdtree->tree_->buildIndex();
-
-  return kdtree;
+  return idx;
 }
 
 void KDTreeSE2::build(const std::vector<gtsam::Pose2> &poses, double angle_weight) {
+  data_ = poses;
   angle_weight_ = angle_weight;
-  data_ = std::make_shared<KDTreeSE2Data>(poses.size(), 4);
-  flann::Matrix<double> dataset(data_->data(), poses.size(), 4);
-  for (int i = 0; i < poses.size(); ++i) {
-    *(dataset[i] + 0) = poses[i].x();
-    *(dataset[i] + 1) = poses[i].y();
-    *(dataset[i] + 2) = poses[i].rotation().c();
-    *(dataset[i] + 3) = poses[i].rotation().s();
-  }
-
-  tree_ = std::make_shared<KDTreeSE2Index>(dataset, flann::KDTreeSingleIndexParams(), L2_SE2<double>(angle_weight));
-  tree_->buildIndex();
 }
 
 void KDTreeSE2::addPoints(const std::vector<gtsam::Pose2> &poses) {
-  assert(tree_);
-//    if (!tree_) {
-//      build(poses, angle_weight);
-//    }
-
-  data_->conservativeResize(poses.size() + data_->rows(), Eigen::NoChange);
-  flann::Matrix<double> dataset(data_->data() + tree_->size() * 4, poses.size(), 4);
-  for (int i = 0; i < poses.size(); ++i) {
-    *(dataset[i] + 0) = poses[i].x();
-    *(dataset[i] + 1) = poses[i].y();
-    *(dataset[i] + 2) = poses[i].rotation().c();
-    *(dataset[i] + 3) = poses[i].rotation().s();
-  }
-  tree_->addPoints(dataset, REBUILD_THRESHOLD);
+  data_.insert(data_.end(), poses.begin(), poses.end());
 }
 
 int KDTreeSE2::queryNearestNeighbor(const gtsam::Pose2 &pose) const {
-  assert(tree_ != nullptr);
+  assert(data_.size() > 0);
 
-  flann::Matrix<double> query(new double[4], 1, 4);
-  *(query[0] + 0) = pose.x();
-  *(query[0] + 1) = pose.y();
-  *(query[0] + 2) = pose.rotation().c();
-  *(query[0] + 3) = pose.rotation().s();
-
-  flann::Matrix<int> indices(new int[1], 1, 1);
-  flann::Matrix<double> dists(new double[1], 1, 1);
-
-  flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, 0, false);
-  tree_->knnSearch(query, indices, dists, 0, params);
-  int n = *indices[0];
-
-  delete[] query.ptr();
-  delete[] indices.ptr();
-  delete[] dists.ptr();
+  int n = 0;
+  double min_dist = std::numeric_limits<double>::max();
+  for (int i = 0; i < data_.size(); ++i) {
+    double dist = sqDistanceBetweenPoses(pose, data_[i], angle_weight_);
+    if (dist < min_dist) {
+      min_dist = dist;
+      n = i;
+    }
+  }
 
   return n;
 }
 
 std::vector<int> KDTreeSE2::queryRadiusNeighbors(const gtsam::Pose2 &pose, double radius, int max_neighbors) const {
-  assert(tree_ != nullptr);
+  assert(data_.size() > 0);
 
+  std::vector<int> idx;
   if (radius < 0)
-    return std::vector<int>();
+    return idx;
 
-  flann::Matrix<double> query(new double[4], 1, 4);
-  *(query[0] + 0) = pose.x();
-  *(query[0] + 1) = pose.y();
-  *(query[0] + 2) = pose.rotation().c();
-  *(query[0] + 3) = pose.rotation().s();
+  for (int i = 0; i < data_.size(); ++i) {
+    double dist = sqDistanceBetweenPoses(pose, data_[i], angle_weight_);
+    if (sqrt(dist) < radius) {
+      idx.push_back(i);
+      if (max_neighbors > 0 && idx.size() >= max_neighbors)
+        break;
+    }
+  }
 
-  std::vector<std::vector<int>> indices;
-  std::vector<std::vector<double>> dists;
-
-  flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, 0, false);
-  params.max_neighbors = max_neighbors;
-  tree_->radiusSearch(query, indices, dists, (float) (radius * radius), params);
-
-  delete[] query.ptr();
-
-  return indices[0];
+  return idx;
 }
 
 }

@@ -45,7 +45,6 @@ bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node) const {
   // if (vl_nearest_neighbor < virtual_map_->getVirtualLandmarkSize() &&
   //     virtual_map_->getVirtualLandmark(vl_nearest_neighbor).probability > parameter_.occupancy_threshold)
   //   return false;
-
   std::vector<unsigned int> l_neighbors =
       map_->searchLandmarkNeighbors(node->state, parameter_.safe_distance, 1);
   return l_neighbors.size() == 0;
@@ -53,6 +52,7 @@ bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node) const {
 
 bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::Node::shared_ptr parent) const {
   double safe_distance = parameter_.safe_distance;
+  assert(safe_distance > 0);
 
   if (parameter_.dubins_control_model_enabled) {
     for (int i = 1; i < node->poses.size() - 1; ++i) {
@@ -81,6 +81,7 @@ bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::Node::
 EMPlanner2D::Node::shared_ptr EMPlanner2D::sampleNode() const {
   const Map::Parameter &map_parameter = map_->getParameter();
 
+  int failed = 0;
   while (true) {
     Eigen::VectorXd value = qrng_.generate();
     double x = map_parameter.getMinX() + value(0) * (map_parameter.getMaxX() - map_parameter.getMinX());
@@ -95,6 +96,11 @@ EMPlanner2D::Node::shared_ptr EMPlanner2D::sampleNode() const {
     EMPlanner2D::Node::shared_ptr node(new EMPlanner2D::Node(pose));
     if (isSafe(node))
       return node;
+    else
+      failed += 1;
+    
+    if (failed > 1000)
+      return nullptr;
   }
 }
 
@@ -162,7 +168,7 @@ bool EMPlanner2D::connectNode(EMPlanner2D::Node::shared_ptr node, EMPlanner2D::N
   const Pose2 &origin = parent->state.pose;
   double max_edge_distance = parameter_.max_edge_length;
   double d = origin.range(node->state.pose);
-  if (fabs(d - parameter_.max_edge_length) > 0.1 * parameter_.max_edge_length)
+  if (fabs(d - parameter_.max_edge_length) > 1 * parameter_.max_edge_length)
     return false;
 
   if (!parameter_.dubins_control_model_enabled) {
@@ -765,14 +771,14 @@ void EMPlanner2D::updateNode(EMPlanner2D::Node::shared_ptr node) {
 
 EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const VirtualMap &virtual_map) {
   initialize(slam, virtual_map);
-
+  assert(parameter_.safe_distance > 0);
   double safe_distance_backup = parameter_.safe_distance;
   // Decrease the safe distance if the vehicle is close to obstacles in the beginning.
   int nearest = map_->searchLandmarkNearest(map_->getCurrentVehicle());
   if (nearest < map_->getLandmarkSize()) {
     double distance = map_->getLandmark(nearest).point.distance(map_->getCurrentVehicle().pose.t());
     if (distance < parameter_.safe_distance) {
-      parameter_.safe_distance = distance - 0.1;
+      parameter_.safe_distance = std::max(0.1, distance - 0.1);
     }
   }
 
@@ -783,12 +789,20 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
       std::cout << "Start. sampling num: " << num_nodes << std::endl;
 
     EMPlanner2D::Node::shared_ptr node = sampleNode();
+    if (node == nullptr) {
+      parameter_.safe_distance = safe_distance_backup;
+      return OptimizationResult::SAMPLING_FAILURE;
+    }
+      
     EMPlanner2D::Node::shared_ptr parent = nearestNode(node);
 
     if (!connectNode(node, parent)) {
       failed += 1;
-      // if (failed > 100)
-      //   return OptimizationResult::SAMPLING_FAILURE;
+      // std::cout << failed << std::endl;
+      if (failed > 1000) {
+        parameter_.safe_distance = safe_distance_backup;
+        return OptimizationResult::SAMPLING_FAILURE;
+      }
       continue;
     }
     failed = 0;
@@ -839,7 +853,8 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
 
   double percentage = (double) vl_known / virtual_map.getVirtualLandmarkSize();
   // std::cout << "Map coverage: " << percentage << std::endl;
-  best_node_->print();
+  // best_node_->print();
+  parameter_.safe_distance = safe_distance_backup;
 
   if (best_node_ == root_) {
     return OptimizationResult::NO_SOLUTION;
@@ -901,7 +916,7 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize(const SLAM2D &slam, const 
     }
   }
   update_distance_weight_ = true;
-//  parameter_.safe_distance = safe_distance_backup;
+  parameter_.safe_distance = safe_distance_backup;
   return OptimizationResult::SUCCESS;
 }
 
