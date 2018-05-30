@@ -82,7 +82,8 @@ PYBIND11_MODULE(planner2d, m) {
         return py::make_iterator(p.cbeginDubinsLibrary(), p.cendDubinsLibrary()); })
       .def("get_dubins_path", &EMPlanner2D::getDubinsPath)
       .def_static("calculate_utility", &EMPlanner2D::calculateUtility)
-      .def("optimize", &EMPlanner2D::optimize);
+      .def("optimize", &EMPlanner2D::optimize)
+      .def("optimize2", &EMPlanner2D::optimize2);
 
   py::enum_<EMPlanner2D::OptimizationResult>(planner2d, "OptimizationResult")
       .value("SAMPLING_FAILURE", EMPlanner2D::OptimizationResult::SAMPLING_FAILURE)

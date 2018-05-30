@@ -129,7 +129,7 @@ def plot_map(m, ax=None, trajectory=True, label=False, cov=True):
             x.append(pose.pose.x)
             y.append(pose.pose.y)
             if cov and pose.core_vehicle:
-                plot_info_ellipse([pose.pose.x, pose.pose.y], pose.information[:2, :2], ec='none',
+                plot_cov_ellipse([pose.pose.x, pose.pose.y], pose.global_covariance[:2, :2], ec='none',
                                   color='g', alpha=0.5)
         ax.plot(x, y, 'g-')
 
@@ -235,7 +235,7 @@ def plot_path(planner, ax=None, dubins=False, cov=True, rrt=True):
                 ax.plot(x, y, '-', color=color, alpha=0.3, linewidth=1.0)
 
                 if cov and edge.second.cost < 1e9:
-                    plot_info_ellipse([x[-1], y[-1]], edge.second.state.information[:2, :2], ec='none',
+                    plot_cov_ellipse([x[-1], y[-1]], edge.second.state.global_covariance[:2, :2], ec='none',
                                       color='red', alpha=0.5)
 
         for edge in planner.iter_solution():

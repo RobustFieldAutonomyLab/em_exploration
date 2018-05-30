@@ -185,6 +185,11 @@ Eigen::Matrix3d VehicleBeliefState::covariance() const {
   return inverse(information);
 }
 
+Eigen::Matrix3d VehicleBeliefState::globalCovariance() const {
+  Pose2 R(pose.r(), Point2());
+  return R.matrix() * inverse(information) * R.matrix().transpose();
+}
+
 void VehicleBeliefState::print() const {
   std::cout << "Vehicle Belief State" << std::endl;
   std::cout << "  Pose: [" << pose.x() << ", " << pose.y() << ", " << pose.theta() << "]" << std::endl;

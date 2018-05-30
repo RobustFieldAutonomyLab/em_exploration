@@ -282,6 +282,9 @@ void VirtualMap::updateInformation(const VehicleBeliefState &state, const Bearin
   std::vector<int> neighbors = searchVirtualLandmarkNeighbors(state, sensor_model.getParameter().getMaxRange(), -1);
 
   for (int n : neighbors) {
+    if (virtual_landmarks_[n].probability < 0.49)
+      continue;
+
     VirtualLandmark temp;
     temp.point = virtual_landmarks_[n].point;
     if (!predictVirtualLandmark(state, temp, sensor_model))

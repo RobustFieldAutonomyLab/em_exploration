@@ -1,10 +1,10 @@
+#include <queue>
 #include "em_exploration/SLAM2D.h"
 #include "em_exploration/Utils.h"
 
 using namespace gtsam;
 
 namespace em_exploration {
-
 SLAM2D::SLAM2D(const Map::Parameter &parameter, RNG::SeedType seed)
     : map_(parameter), step_(0), marginals_update_(false), optimized_(false), rng_(seed) {
   ISAM2Params params;
@@ -137,11 +137,11 @@ void SLAM2D::printGraph() const {
 Eigen::MatrixXd SLAM2D::jointMarginalCovarianceLocal(const std::vector<unsigned int> &poses,
                                                      const std::vector<unsigned int> &landmarks) const {
   if (!marginals_update_) {
-    /*
-     * Marginals::Factorization::QR;
-     * isam_->getLinearizationPoint()
-     */
+#ifdef USE_FAST_MARGINAL
+    marginals_ = std::make_shared<FastMarginals>(isam_);
+#else
     marginals_ = std::make_shared<Marginals>(isam_->getFactorsUnsafe(), result_);
+#endif
     marginals_update_ = true;
   }
 
@@ -151,6 +151,9 @@ Eigen::MatrixXd SLAM2D::jointMarginalCovarianceLocal(const std::vector<unsigned 
   for (unsigned int l : landmarks)
     keys.emplace_back(getLandmarkSymbol(l));
 
+#ifdef USE_FAST_MARGINAL
+  return marginals_->jointMarginalCovariance(keys);
+#else
   JointMarginal cov = marginals_->jointMarginalCovariance(keys);
 
   size_t n = poses.size() * 3 + landmarks.size() * 2;
@@ -169,16 +172,17 @@ Eigen::MatrixXd SLAM2D::jointMarginalCovarianceLocal(const std::vector<unsigned 
   }
   S.triangularView<Eigen::Lower>() = S.transpose();
   return S;
+#endif
 }
 
 Eigen::MatrixXd SLAM2D::jointMarginalCovariance(const std::vector<unsigned int> &poses,
                                                 const std::vector<unsigned int> &landmarks) const {
   if (!marginals_update_) {
-    /*
-     * Marginals::Factorization::QR;
-     * isam_->getLinearizationPoint()
-     */
+#ifdef USE_FAST_MARGINAL
+    marginals_ = std::make_shared<FastMarginals>(isam_);
+#else
     marginals_ = std::make_shared<Marginals>(isam_->getFactorsUnsafe(), result_);
+#endif
     marginals_update_ = true;
   }
 
@@ -188,6 +192,10 @@ Eigen::MatrixXd SLAM2D::jointMarginalCovariance(const std::vector<unsigned int> 
   for (unsigned int l : landmarks)
     keys.emplace_back(getLandmarkSymbol(l));
 
+#ifdef USE_FAST_MARGINAL
+  /// TODO
+  assert(false);
+#else
   JointMarginal cov = marginals_->jointMarginalCovariance(keys);
 
   size_t n = poses.size() * 3 + landmarks.size() * 2;
@@ -217,6 +225,7 @@ Eigen::MatrixXd SLAM2D::jointMarginalCovariance(const std::vector<unsigned int> 
   }
   S.triangularView<Eigen::Lower>() = S.transpose();
   return S;
+#endif
 }
 
 std::shared_ptr<const ISAM2> SLAM2D::getISAM2() const {
@@ -231,15 +240,23 @@ void SLAM2D::optimize(bool update_covariance) {
     return;
 
   isam_->update(graph_, initial_estimate_);
-  result_ = isam_->calculateBestEstimate();
+  result_ = isam_->calculateEstimate();
+
+#ifdef USE_FAST_MARGINAL
+  marginals_ = std::make_shared<FastMarginals>(isam_);
+#endif
 
   for (int i = 0; i < step_; ++i) {
     Symbol x = getVehicleSymbol(i);
     Pose2 pose = result_.at<Pose2>(x);
     if (update_covariance) {
+#ifdef USE_FAST_MARGINAL
+      Eigen::Matrix3d covariance = marginals_->marginalCovariance(x);
+#else
       Eigen::Matrix3d covariance = isam_->marginalCovariance(x);
-      Pose2 R(pose.r(), Point2());
-      covariance = R.matrix() * covariance * R.matrix().transpose();
+#endif
+//      Pose2 R(pose.r(), Point2());
+//      covariance = R.matrix() * covariance * R.matrix().transpose();
 
       VehicleBeliefState state(pose, inverse(covariance));
       if (i < map_.getTrajectorySize()) {
@@ -260,7 +277,11 @@ void SLAM2D::optimize(bool update_covariance) {
     Symbol l = getLandmarkSymbol(it->first);
     it->second.point = result_.at<Point2>(l);
     if (update_covariance)
+#ifdef USE_FAST_MARGINAL
+      it->second.information = marginals_->marginalCovariance(l).inverse();
+#else
       it->second.information = isam_->marginalCovariance(l).inverse();
+#endif
   }
 
   graph_.resize(0);
