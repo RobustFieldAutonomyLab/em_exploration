@@ -14,7 +14,7 @@ namespace em_exploration {
  */
 class QRNG {
  public:
-  QRNG(int dim) : dim_(dim), count_(0) {}
+  QRNG(int dim, int skip=0) : dim_(dim), count_(skip) {}
 
   void setDim(int dim) {
     dim_ = dim;

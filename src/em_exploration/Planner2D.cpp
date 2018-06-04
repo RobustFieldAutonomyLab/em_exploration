@@ -9,6 +9,7 @@ namespace em_exploration {
 void EMPlanner2D::Parameter::print() const {
   std::cout << "RRT Planner Parameters:" << std::endl;
   std::cout << "  Verbose: " << verbose << std::endl;
+  std::cout << "  Seed: " << seed << std::endl;
   std::cout << "  Angle Weight: " << angle_weight << std::endl;
   std::cout << "  Distance Weight: [" << distance_weight0 << ", " << distance_weight1 << "]" << std::endl;
   std::cout << "  Max Nodes: " << max_nodes << std::endl;
@@ -33,7 +34,7 @@ void EMPlanner2D::Parameter::print() const {
 EMPlanner2D::EMPlanner2D(const Parameter &parameter,
                          const BearingRangeSensorModel &sensor_model,
                          const SimpleControlModel &control_model)
-    : parameter_(parameter), sensor_model_(sensor_model), control_model_(control_model), qrng_(3), rng_(),
+    : parameter_(parameter), sensor_model_(sensor_model), control_model_(control_model), rng_(), qrng_(3, rng_.uniformInt(0, 100000)),
       update_distance_weight_(true), distance_weight_(1e10) {
   if (parameter_.dubins_control_model_enabled) {
     qrng_.setDim(2);

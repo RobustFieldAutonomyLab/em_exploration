@@ -24,6 +24,7 @@ PYBIND11_MODULE(planner2d, m) {
   py::class_<EMPlanner2D::Parameter>(m, "EMPlannerParameter")
       .def(py::init())
       .def_readwrite("verbose", &EMPlanner2D::Parameter::verbose)
+      .def_readwrite("seed", &EMPlanner2D::Parameter::seed)
       .def_readwrite("max_edge_length", &EMPlanner2D::Parameter::max_edge_length)
       .def_readwrite("num_actions", &EMPlanner2D::Parameter::num_actions)
       .def_readwrite("max_nodes", &EMPlanner2D::Parameter::max_nodes)

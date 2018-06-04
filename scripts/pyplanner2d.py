@@ -25,6 +25,7 @@ def read_dubins_params(config):
 def read_planner_params(config):
     planner_params = planner2d.EMPlannerParameter()
     planner_params.verbose = config.getboolean('Planner', 'verbose')
+    planner_params.seed = config.getint('Planner', 'seed')
     planner_params.max_edge_length = config.getfloat('Planner', 'max_edge_length')
     planner_params.num_actions = config.getint('Planner', 'num_actions')
     planner_params.max_nodes = config.getfloat('Planner', 'max_nodes')

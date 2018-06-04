@@ -104,6 +104,7 @@ class ExplorationEnv(gym.Env):
             # Reset seed in configuration
             seed = self.np_random.randint(0, np.iinfo(np.int32).max, dtype=np.int32)
             self._config.set('Simulator', 'seed', str(seed))
+            self._config.set('Planner', 'seed', str(seed))
 
             # Initialize new instance and perfrom a 360 degree scan of the surrounding
             self._sim = EMExplorer(self._config)
@@ -166,13 +167,13 @@ if __name__ == '__main__':
     total_reward = np.empty([0, 0])
 
     mode = 'human'
-    env = ExplorationEnv(config_file, 12)
+    env = ExplorationEnv(config_file, 120)
     t = 0
     # env.render(mode=mode)
     for i in range(10000000):
         if env.done():
             del env
-            env = ExplorationEnv(config_file, 12)
+            env = ExplorationEnv(config_file, 120)
             x = env.reset()
         actions = env.plan()
         for a in actions[:5]:
@@ -181,7 +182,7 @@ if __name__ == '__main__':
             print 'step: ', t, 'reward: ', reward, 'done: ', done, 'explored: ', env.status()
             if env.done():
                 del env
-                env = ExplorationEnv(config_file, 12)
+                env = ExplorationEnv(config_file, 120)
                 x = env.reset()
                 break
             # total_reward = np.append(total_reward, reward)

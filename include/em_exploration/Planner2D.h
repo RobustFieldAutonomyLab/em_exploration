@@ -52,6 +52,7 @@ class EMPlanner2D {
     void print() const;
 
     bool verbose;   /// print debug info
+    RNG::SeedType seed;
 
     double angle_weight;   /// angle weight in distance function
     /// w = w0 - (w0 - w1) * exploration_percentage
