@@ -34,12 +34,14 @@ void EMPlanner2D::Parameter::print() const {
 EMPlanner2D::EMPlanner2D(const Parameter &parameter,
                          const BearingRangeSensorModel &sensor_model,
                          const SimpleControlModel &control_model)
-    : parameter_(parameter), sensor_model_(sensor_model), control_model_(control_model), rng_(), qrng_(3, rng_.uniformInt(0, 100000)),
+    : parameter_(parameter), sensor_model_(sensor_model), control_model_(control_model),
+      rng_(parameter_.seed), qrng_(3),
       update_distance_weight_(true), distance_weight_(1e10) {
   if (parameter_.dubins_control_model_enabled) {
     qrng_.setDim(2);
     initializeDubinsPathLibrary();
   }
+  qrng_.setCount(rng_.uniformInt(0, 100000));
 }
 
 bool EMPlanner2D::isSafe(EMPlanner2D::Node::shared_ptr node) const {
@@ -813,7 +815,7 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
   if (nearest < map_->getLandmarkSize()) {
     double distance = map_->getLandmark(nearest).point.distance(map_->getCurrentVehicle().pose.t());
     if (distance < parameter_.safe_distance) {
-      parameter_.safe_distance = distance - 0.1;
+      parameter_.safe_distance = std::max(0.1, distance - 0.1);
     }
   }
 
@@ -886,6 +888,8 @@ EMPlanner2D::OptimizationResult EMPlanner2D::optimize2(const SLAM2D &slam, const
   double percentage = (double) vl_known / virtual_map.getVirtualLandmarkSize();
   // std::cout << "Map coverage: " << percentage << std::endl;
 
+  update_distance_weight_ = true;
+  parameter_.safe_distance = safe_distance_backup;
   return OptimizationResult::SUCCESS;
 }
 

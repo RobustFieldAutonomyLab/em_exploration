@@ -4,7 +4,7 @@
 #include <random>
 #include <Eigen/Core>
 #include <Eigen/Cholesky>
-
+#include <iostream>
 #include "halton/halton.hpp"
 
 namespace em_exploration {
@@ -14,11 +14,14 @@ namespace em_exploration {
  */
 class QRNG {
  public:
-  QRNG(int dim, int skip=0) : dim_(dim), count_(skip) {}
+  QRNG(int dim, int count=0) : dim_(dim), count_(count) {}
 
   void setDim(int dim) {
     dim_ = dim;
-    count_ = 0;
+  }
+
+  void setCount(int count) {
+    count_ = count;
   }
 
   int getCount() const { return count_; }

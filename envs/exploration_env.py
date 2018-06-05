@@ -188,5 +188,5 @@ if __name__ == '__main__':
             # total_reward = np.append(total_reward, reward)
             # np.savetxt("total_reward.csv", total_reward, delimiter=",")
             # print 'shape', np.shape(obs[1])
-            # env.render(mode=mode)
+            env.render(mode=mode)
     plt.pause(1e10)
